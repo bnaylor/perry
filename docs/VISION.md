@@ -57,11 +57,15 @@ The Executor writes to an ephemeral `/out` directory. The Notary (non-agent serv
 
 ## Phasing
 
-**Phase 1 (current): Orchestration skeleton.** Working FSM, Dispatcher, Policy Engine, LLM provider layer, audit pipeline coordination, mock agents. A task can flow through every state with deterministic enforcement. Python audit tooling (AST, secrets, context packet validation) is real.
+**Phase 1 (complete): Orchestration skeleton.** Working FSM, Dispatcher, Policy Engine, LLM provider interface, audit pipeline coordination, mock agents. A task flows through every state with deterministic enforcement. Python audit tooling (AST, secrets, context packet validation) is real. 58 tests, 48 files, 2514 lines of Go + Python.
 
-**Phase 2: Real execution.** Container runtime (Docker/Podman), Notary file scanning, Output Gate, compute health monitoring. Agents start producing real output.
+**Phase 2 (current): Real LLM agents.** Three provider implementations (Anthropic, Gemini, Ollama) behind the existing `llm.Provider` interface. Real agent system prompts with structured JSON output. Provider map for Dispatcher-driven routing. YAML config loading. CLI that accepts a task description. Agents produce real output flowing through the full state machine.
 
-**Phase 3: Full platform.** Sovereign Cache (agent persistence), PM Dashboard, long-term state manager, packet signing, non-coding task workflows.
+**Phase 3: Sandbox, audit wiring, and codebase awareness.** Python audit subprocess integration, container runtime (Docker/Podman), Notary file scanning, layered filesystem ("Mirror Cage") for workspace-aware code generation, patch-based auditing.
+
+**Phase 4: Discord and observability.** Discord bot sidecar, Prometheus-style metrics, compute health monitoring, dashboard.
+
+**Phase 5: Advanced platform.** Sovereign Cache (agent persistence), long-term state manager, packet signing, non-coding task workflows.
 
 ## Where The Design Came From
 
