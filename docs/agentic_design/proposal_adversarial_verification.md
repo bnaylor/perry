@@ -23,13 +23,18 @@ The Shadow Auditor does not just "reject" code with a comment; it must produce a
     - If the PoC fails (the exploit doesn't work), the Shadow Auditor's finding is dismissed as a "False Positive," and the audit continues.
 
 ### 3. Asymmetric Layering in the FSM
-The Shadow Auditor sits between the Deterministic Gates and the Semantic Auditor in the `AUDITING` state.
+The Shadow Auditor acts as the final "stress test" in the `AUDITING` state, following faster, cheaper checks.
 
 1. **Gate 1 (Deterministic):** AST, Bandit, Secrets scan (Local).
-2. **Gate 2 (Adversarial):** **Shadow Auditor** attempts to break the code (Cloud LLM).
-3. **Gate 3 (Semantic):** Standard Auditor verifies intent alignment and style (Cloud LLM).
+2. **Gate 2 (Semantic):** Standard Auditor verifies intent alignment and style (Cloud LLM - fast/cheap).
+3. **Gate 3 (Adversarial):** **Shadow Auditor** attempts to break the code (High-reasoning LLM).
 
-By running the Shadow Auditor *before* the standard Auditor, we ensure that the "friendly" auditor is reviewing code that has already survived a targeted red-team attack.
+By running the Shadow Auditor *last*, we ensure we only burn expensive "reasoning tokens" on code that has already passed basic quality and security bars.
+
+### 4. Metrics & Performance
+- **Falsifiability ("Prove it or shut up"):** The Shadow Auditor's findings are only valid if the PoC triggers a failure in the Executor. This eliminates "hallucinated vulnerabilities" from blocking the pipeline.
+- **False Positive Tracking:** We will track the "Shadow False Positive Rate" (Findings with failing PoCs vs. total findings) to tune the adversarial prompts and model selection.
+- **PoC Difficulty:** Generating working exploits is significantly harder than writing the code itself. This role is a primary candidate for high-reasoning local models like **DeepSeek-R1 (32b)** or cloud-based **Claude 3.5 Sonnet**.
 
 ## Impact on Security
 - **Catches Domain-Specific Flaws:** Unlike a generic scanner, the Shadow Auditor understands the *logic* of the task and can spot vulnerabilities in custom business logic.

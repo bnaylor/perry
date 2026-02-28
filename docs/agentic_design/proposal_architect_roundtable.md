@@ -16,32 +16,30 @@ The Architect is a new, high-reasoning agent role. Unlike the Strategist (who ow
     - `finalize`: Synthesizes the discussion into a final Markdown document in `docs/`.
 
 ### 2. The Roundtable Protocol (Moderated Discord Chat)
-To prevent multi-agent discussions from "spinning out of control," we implement a deterministic **Moderator Service** (within the Go control plane) that manages the Discord interaction.
+To ensure the discussion is robust and available, we implement a **Roundtable Moderator Service** (within the Go control plane) that manages an internal `RoundtableLog` (JSON) and mirrors it to Discord.
 
+- **Discord as Mirror:** The native substrate is the internal JSON log; Discord acts as a subscriber for visibility and human intervention. If Discord is unreachable, the discussion can still proceed.
 - **The Token:** Only one agent holds "the token" to speak at a time. The Moderator assigns the token based on a simple turn-taking or "Request to Speak" (RTS) queue.
-- **Threaded Discussions:** Every new design task creates a dedicated Discord thread. This keeps the main `#agent-coordination` channel for high-level status.
+- **V1 Moderation Scope:** For Phase 1, the Moderator's consensus detection is a simple prompt asking "Do we have consensus?" rather than complex free-text parsing.
+- **Threaded Discussions:** Every new design task creates a dedicated Discord thread.
 - **Stateful Emojis:**
     - 🗣️ **Speaking:** Agent is currently posting.
     - ⏳ **Thinking:** Agent is generating a response.
     - 🙋 **RTS:** Agent wants to reply to a specific point.
     - ✅ **Approved:** Agent agrees with the current draft.
-- **Consensus & Stopping Criteria:**
-    - **Convergence:** Discussion ends when all Architects have posted a ✅ on the same draft.
-    - **Deadlock:** If consensus isn't reached in $N$ rounds, the Moderator pings the **Human Owner** for a tie-breaker.
-    - **Finalization:** Once approved, the Orchestrator commits the design doc to the repository and transitions the FSM to `PLANNING`.
 
-### 3. FSM Integration: The `IDEATING` State
+### 3. FSM Integration: The `IDEATING` & `RE_IDEATING` States
 We introduce a new state before `PLANNING`:
 
 ```
 SUBMITTED → IDEATING → PLANNING → ...
 ```
 
-- **IDEATING:** The Roundtable is active. Architects are debating the design in Discord.
-- **PLANNING:** The approved design is broken down into the 16-task TDD-style plan we saw in Phase 1.
+- **IDEATING:** The Roundtable is active. Architects are debating the design.
+- **RE_IDEATING (Safe Re-Entry):** To avoid infinite agentic cycles, we add an explicit `RE_IDEATING` state. This state can **only** be triggered by a `HumanIntervention` event (e.g., from Discord). This allows the human owner to send a design back to the drawing board if a major blocker is found, without creating uncontrolled loops in the FSM.
 
-### 4. Iterative Refinement (The "Loop Back")
-The FSM allows a "Loop Back to IDEATING" from any state if a major architectural blocker is found (e.g., during `EXECUTING` or `AUDITING`). This triggers a new Roundtable session to solve the specific blocker.
+### 4. Iterative Refinement
+The approved design is broken down into the 16-task TDD-style plan we saw in Phase 1. If consensus isn't reached in $N$ rounds, the Moderator pings the **Human Owner** for a tie-breaker.
 
 ## Impact on User Experience
 - **Real-Time Collaboration:** The human owner can jump into the Discord thread at any time to steer the discussion, provide constraints, or "like" a specific proposal.

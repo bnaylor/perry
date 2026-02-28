@@ -39,30 +39,44 @@ PARAMETER temperature 0.2
 Then run: `ollama create perry-agent -f perry-cluster.Modelfile`
 
 ## Multi-Node Dispatching
-The Perry Go orchestrator will route requests to different local IP addresses:
-- `http://<linux-box-ip>:11434` -> Coder Tasks
-- `http://<khadas-mind-ip>:11434` -> Auditor/Architect Tasks
+The Perry Go orchestrator's `Dispatcher` must be updated to support named `provider_instances`. 
+
+### `routing.yaml` Example (Proposed)
+```yaml
+providers:
+  - name: local-cuda
+    type: ollama
+    base_url: "http://<linux-box-ip>:11434"
+  - name: local-npu
+    type: ollama
+    base_url: "http://<khadas-mind-ip>:11434"
+
+routing:
+  roles:
+    coder: local-cuda
+    auditor: local-npu
+    architect: [local-cuda, local-npu] # Round-robin or capability-based
+```
 
 ## Tuning Observations & Performance Trade-offs
 
 ### 1. The VRAM vs. Context (KV Cache) Pressure
 Increasing `num_ctx` to 32k or 64k significantly increases the **KV Cache** footprint in VRAM. 
-- **Observation:** A 32b model (Q4_K_M) takes ~18-20GB of raw weights, but fits in 16GB VRAM via partial offloading. 
-- **The "Context Wall":** At 32k context, the KV cache can add 2-4GB of additional VRAM pressure. If the combined weights + cache exceed 16GB, Ollama will offload more layers to System RAM (CPU), causing a "speed cliff" where performance drops from ~10 t/s to ~2 t/s.
-- **Tuning Tip:** If performance tanks at 32k, try dropping to **24,576 (24k)** or switching to a lighter quantization (`Q4_K_S` or `Q3_K_M`) to keep the "Active Working Set" inside the GPU.
+- **The "Speed Cliff":** If combined weights + cache exceed 16GB, Ollama will offload more layers to System RAM, causing performance to drop from ~10 t/s to ~2 t/s.
+- **Tuning Tip:** If performance tanks at 32k, try dropping to **24k** or using lighter quantization.
 
 ### 2. Quantization Strategy for the "Sovereign Cluster"
-- **32b Models (Sweet Spot):** Use `Q4_K_M`. This is the best balance of logic retention and speed for the 4070 Ti / 4060 class cards.
-- **70b Models (The Genius Tier):** Use `Q3_K_S`. Even on 64GB of system RAM, a 70b model is "heavy." Lower quantization allows more of the model to stay in RAM without hitting swap, which is fatal for performance. Use this strictly for "Architectural Deadlocks" where reasoning is more important than speed.
+- **32b Models (Sweet Spot):** Use `Q4_K_M`. Best balance of logic retention and speed.
+- **70b Models (The Genius Tier):** **Caveat:** Q3 quantization for 70b models (like Llama-3) often results in a significant loss of reasoning capability compared to higher-bit 32b models. Use these strictly for non-critical brainstorming. For high-stakes reasoning, prefer cloud escalation (Claude/Gemini).
 
 ### 3. Offloading Background Tasks (Arc & NPU)
 To keep the main NVIDIA GPUs 100% available for the Coder/Auditor, we use the Khadas Mind's secondary silicon:
-- **Arc iGPU (OpenVINO):** Perfect for **Llama-Guard** or **ShieldGemma**. These models act as "Input/Output Firewalls" to catch prompt injections or malicious output before they hit the Discord UI.
-- **NPU (34 TOPS):** Best used for **Local Embeddings** (e.g., `bge-m3` or `nomic-embed-text`). By running the vectorization on the NPU, the Perry "Sovereign Cache" can index your codebase in the background without stealing a single CUDA core from the Coder.
+- **Arc iGPU (OpenVINO):** Optimized for **Llama-Guard** (Input/Output Safety Firewall).
+- **NPU (34 TOPS):** Optimized for **Local Embeddings** (Codebase Indexing).
 
 ## Deployment Checklist
 1. [ ] `ollama pull qwen2.5-coder:32b` (Node 1)
 2. [ ] `ollama pull deepseek-r1:32b` (Node 2)
-3. [ ] Create `perry-cluster` with 32k `num_ctx` on both.
-4. [ ] Run `nvtop` on Linux and `Intel GPU Top` on Khadas to verify offloading.
-5. [ ] **Verification:** Run a 200-line code file through the Coder and monitor VRAM "Memory" % to ensure no OOM (Out of Memory) crashes.
+3. [ ] Create `perry-agent` with 32k `num_ctx` on both.
+4. [ ] Run `scripts/setup-cluster.sh` (Auto-pulls models, creates Modelfiles, runs smoke tests).
+5. [ ] **Verification:** Run a 200-line code file through the Coder and monitor VRAM % to ensure no OOM.

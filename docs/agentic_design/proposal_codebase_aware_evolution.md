@@ -1,30 +1,24 @@
 # Phase 2 Design: Workspace-Aware Orchestration (v2)
 
-## The Problem
-The Phase 1 "Airlock" design is optimized for a code generator that produces a standalone artifact (a "perfectly-formed nugget"). However, real-world development involves modifying an established, multi-file codebase. 
-
-Providing the entire repository to an ephemeral Coder agent violates least-privilege, and providing no repository context makes the agent's code un-runnable and un-testable.
-
-## The Solution: Workspace-Aware Evolution
-We will evolve the Strategist and Executor to support a "Layered Sandbox" model that allows agents to work *within* an existing project without compromising the host filesystem.
+## Goal: Core Phase 2 Objective
+The transition from "standalone code generator" to "secure codebase collaborator" is the primary technical objective for Phase 2.
 
 ### 1. The Strategist as "Workspace Orchestrator"
 The Strategist's role is expanded to define a **Working Set** based on user intent.
 
-- **Explicit Declaration:** Instead of complex auto-discovery (Phase 3+), the Strategist explicitly declares which files the task needs to touch or see.
+- **Strategist Ownership:** The Strategist (not the Researcher) is the authoritative agent for identifying which files are relevant to the task. The Researcher remains a stateless "fetcher" of these files.
+- **Explicit Declaration:** Instead of complex auto-discovery, the Strategist explicitly declares the `Working Set`.
 - **Context Packet Expansion:** A new `workspace_context` block is added to the JSON schema:
-    - `read_only_files`: Code the Coder needs to see to understand interfaces, types, and existing utilities.
-    - `writable_files`: The specific files (or file paths for new files) the Coder is authorized to modify.
-    - `runtime_environment`: The required toolchain (e.g., "golang:1.25", "python:3.14-slim", "node:22").
-    - `build_and_test_commands`: The deterministic commands (e.g., `go test ./...`) the Executor should run to verify the changes.
+    - `read_only_files`: Code needed for context (interfaces, types).
+    - `writable_files`: Authorized files for modification.
+    - `runtime_environment`: Required toolchain (e.g., "golang:1.25").
+    - `build_and_test_commands`: Deterministic verification commands.
 
-### 2. The Executor: Layered Filesystem & Language-Specific Containers
-The Executor's sandbox is upgraded to a language-aware "Mirror Cage."
+### 2. The Executor: Layered Sandbox & Toolchains
+The Executor is upgraded to a language-aware "Mirror Cage."
 
-- **Layered Mount (The Mirror Cage):**
-    - **Lower Layer (Read-Only):** A filtered view of the host repository, containing only the files specified by the Strategist.
-    - **Upper Layer (Writable):** An ephemeral, isolated scratchpad where the Coder applies their changes.
-- **Dynamic Toolchain:** The Executor uses the `runtime_environment` field to select or build a language-specific container image (DevContainer style). This ensures the Coder has access to `go test`, `pytest`, or `npm test` without bloating the core orchestrator image.
+- **Layered Mount:** Read-only host mirror + ephemeral writable overlay.
+- **Dynamic Toolchain:** The Executor uses language-specific container images (e.g., a Go-specific runner). **Note:** This increases the sandbox's disk footprint and initial spin-up time but is necessary to provide the full toolchain (`go test`, `npm test`) for internal verification.
 
 ### 3. The Auditor: Patch-Based Enforcement
 The Auditor's deterministic gates are updated to validate **Changes (Diffs)** rather than just full files.
