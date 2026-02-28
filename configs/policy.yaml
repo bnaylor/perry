@@ -1,0 +1,21 @@
+allowed_dependencies:
+  - json
+  - math
+  - os
+  - sys
+  - pathlib
+  - datetime
+  - requests
+  - pandas
+  - numpy
+  - typing
+
+prohibited_imports:
+  - eval
+  - exec
+  - os.system
+  - subprocess
+  - shutil.rmtree
+
+max_tokens_per_task: 500000
+max_cost_per_task: 10.00

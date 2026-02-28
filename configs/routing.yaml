@@ -1,0 +1,24 @@
+defaults:
+  strategist:
+    tier: cloud
+    provider: anthropic
+    model: claude-sonnet-4-6
+  researcher:
+    tier: cloud
+    provider: google
+    model: gemini-2.5-pro
+  coder:
+    tier: local
+    provider: ollama
+    model: qwen2.5-coder:32b
+  auditor_semantic:
+    tier: cloud
+    provider: anthropic
+    model: claude-sonnet-4-6
+
+escalation:
+  max_local_attempts: 3
+  promote_to:
+    tier: cloud
+    provider: anthropic
+    model: claude-sonnet-4-6

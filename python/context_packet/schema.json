@@ -1,0 +1,439 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sovereign-loop.local/schemas/context-packet/v1",
+  "title": "Context Packet",
+  "description": "A structured, sanitized data object produced by the Researcher agent and consumed by the Coder agent. This is the ONLY authorized channel for external information to enter the code-generation pipeline.",
+  "type": "object",
+  "required": [
+    "packet_meta",
+    "task_reference",
+    "external_apis",
+    "data_schemas",
+    "constraints",
+    "researcher_notes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+
+    "packet_meta": {
+      "type": "object",
+      "description": "Provenance and versioning metadata for the packet itself.",
+      "required": ["packet_id", "schema_version", "created_at", "researcher_model", "source_count"],
+      "additionalProperties": false,
+      "properties": {
+        "packet_id": {
+          "type": "string",
+          "pattern": "^CP-[0-9]{8}-[a-f0-9]{8}$",
+          "description": "Unique packet ID. Format: CP-YYYYMMDD-<8 hex chars>. Example: CP-20260227-a3f8c012"
+        },
+        "schema_version": {
+          "type": "string",
+          "const": "1.0.0",
+          "description": "Version of this schema. Locked per deployment."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of packet creation."
+        },
+        "researcher_model": {
+          "type": "string",
+          "description": "Model identifier that produced this packet. e.g. 'gemini-2.5-pro', 'claude-sonnet-4-5'"
+        },
+        "source_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of external sources consulted."
+        },
+        "parent_packet_id": {
+          "type": ["string", "null"],
+          "description": "If this packet is a revision of a prior packet, reference the original here."
+        }
+      }
+    },
+
+    "task_reference": {
+      "type": "object",
+      "description": "Links this packet to the PM's original task and requirements.",
+      "required": ["task_id", "prd_summary", "cuj_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "description": "The PM-assigned task identifier this packet supports."
+        },
+        "prd_summary": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Concise restatement of what the PM asked for. This is the Auditor's primary reference for intent verification."
+        },
+        "cuj_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Which Critical User Journeys this task maps to."
+        }
+      }
+    },
+
+    "external_apis": {
+      "type": "array",
+      "description": "Structured descriptions of external APIs the Coder may need to interact with. Each entry is a sanitized summary — NOT raw documentation.",
+      "items": {
+        "type": "object",
+        "required": ["api_name", "base_url", "auth_method", "endpoints", "source_url", "confidence"],
+        "additionalProperties": false,
+        "properties": {
+          "api_name": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Human-readable name of the API or service."
+          },
+          "base_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Base URL for the API."
+          },
+          "api_version": {
+            "type": ["string", "null"],
+            "description": "API version string if applicable."
+          },
+          "auth_method": {
+            "type": "string",
+            "enum": ["none", "api_key_header", "api_key_query", "bearer_token", "oauth2_client_credentials", "oauth2_authorization_code", "basic_auth", "custom"],
+            "description": "Authentication mechanism. Enumerated to prevent the Researcher from inventing novel auth flows."
+          },
+          "auth_details": {
+            "type": "object",
+            "description": "Structured auth configuration. MUST NOT contain actual secrets — only the shape of what's needed.",
+            "additionalProperties": false,
+            "properties": {
+              "header_name": {
+                "type": ["string", "null"],
+                "description": "e.g. 'X-API-Key', 'Authorization'"
+              },
+              "token_env_var": {
+                "type": ["string", "null"],
+                "pattern": "^[A-Z][A-Z0-9_]*$",
+                "description": "Environment variable name the Coder should reference. e.g. 'WEATHER_API_KEY'. Must be UPPER_SNAKE_CASE."
+              },
+              "oauth_scopes": {
+                "type": ["array", "null"],
+                "items": { "type": "string" },
+                "description": "Required OAuth scopes, if applicable."
+              }
+            }
+          },
+          "rate_limits": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+              "requests_per_minute": { "type": ["integer", "null"] },
+              "requests_per_day": { "type": ["integer", "null"] },
+              "notes": { "type": ["string", "null"], "maxLength": 500 }
+            }
+          },
+          "endpoints": {
+            "type": "array",
+            "description": "Specific endpoints the Coder is authorized to use.",
+            "items": {
+              "type": "object",
+              "required": ["method", "path", "purpose"],
+              "additionalProperties": false,
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Relative path from base_url. e.g. '/v1/weather/current'"
+                },
+                "purpose": {
+                  "type": "string",
+                  "maxLength": 500,
+                  "description": "What this endpoint does, in the Researcher's own words."
+                },
+                "request_schema": {
+                  "type": ["object", "null"],
+                  "description": "JSON Schema describing expected request body. Researcher-authored, not raw copy-paste."
+                },
+                "response_schema": {
+                  "type": ["object", "null"],
+                  "description": "JSON Schema describing expected response shape."
+                },
+                "query_params": {
+                  "type": ["array", "null"],
+                  "items": {
+                    "type": "object",
+                    "required": ["name", "type", "required"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": { "type": "string" },
+                      "type": { "type": "string", "enum": ["string", "integer", "number", "boolean"] },
+                      "required": { "type": "boolean" },
+                      "description": { "type": "string", "maxLength": 300 }
+                    }
+                  }
+                },
+                "error_codes": {
+                  "type": ["array", "null"],
+                  "items": {
+                    "type": "object",
+                    "required": ["code", "meaning"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": { "type": "integer" },
+                      "meaning": { "type": "string", "maxLength": 300 }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "source_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of the documentation the Researcher consulted. For Auditor provenance checking."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"],
+            "description": "Researcher's self-assessed confidence in the accuracy of this entry. 'low' triggers Auditor escalation."
+          },
+          "caveats": {
+            "type": ["string", "null"],
+            "maxLength": 1000,
+            "description": "Known issues, deprecation warnings, or ambiguities the Researcher discovered."
+          }
+        }
+      }
+    },
+
+    "data_schemas": {
+      "type": "array",
+      "description": "Structured descriptions of data formats, file schemas, or domain models relevant to the task.",
+      "items": {
+        "type": "object",
+        "required": ["name", "format", "schema_definition"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "format": {
+            "type": "string",
+            "enum": ["json", "csv", "xml", "yaml", "protobuf", "sql_table", "parquet", "other"],
+            "description": "Data format type."
+          },
+          "schema_definition": {
+            "type": "object",
+            "description": "A JSON Schema or structural description of the data shape. Researcher-authored."
+          },
+          "sample_record": {
+            "type": ["object", "array", "null"],
+            "description": "A single representative record with SYNTHETIC data only. No real PII or credentials."
+          },
+          "source_url": {
+            "type": ["string", "null"],
+            "format": "uri"
+          }
+        }
+      }
+    },
+
+    "dependencies": {
+      "type": "object",
+      "description": "Libraries and tools the Coder may need. Subject to the PM's Approved Library List.",
+      "additionalProperties": false,
+      "properties": {
+        "python": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["package", "version_constraint", "purpose", "pypi_url"],
+            "additionalProperties": false,
+            "properties": {
+              "package": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+              "version_constraint": {
+                "type": "string",
+                "description": "PEP 440 version specifier. e.g. '>=2.28,<3.0'"
+              },
+              "purpose": { "type": "string", "maxLength": 300 },
+              "pypi_url": { "type": "string", "format": "uri" },
+              "on_approved_list": {
+                "type": "boolean",
+                "description": "Whether this package is on the PM's pre-approved list. If false, PM approval is required before the Coder can use it."
+              }
+            }
+          }
+        },
+        "system": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["package", "purpose"],
+            "additionalProperties": false,
+            "properties": {
+              "package": { "type": "string" },
+              "purpose": { "type": "string", "maxLength": 300 }
+            }
+          }
+        },
+        "npm": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["package", "version_constraint", "purpose"],
+            "additionalProperties": false,
+            "properties": {
+              "package": { "type": "string" },
+              "version_constraint": { "type": "string" },
+              "purpose": { "type": "string", "maxLength": 300 },
+              "on_approved_list": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+
+    "constraints": {
+      "type": "object",
+      "description": "Hard boundaries the Coder must operate within. These are non-negotiable and the Auditor will enforce them.",
+      "required": ["permitted_operations", "prohibited_operations"],
+      "additionalProperties": false,
+      "properties": {
+        "permitted_operations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "read_local_file",
+              "write_local_file",
+              "read_env_var",
+              "http_get",
+              "http_post",
+              "http_put",
+              "http_patch",
+              "http_delete",
+              "sql_read",
+              "sql_write",
+              "spawn_subprocess",
+              "write_stdout",
+              "write_stderr"
+            ]
+          },
+          "description": "Explicit allowlist of operation types. The Coder MUST NOT produce code that performs operations outside this list."
+        },
+        "prohibited_operations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Explicit denylist for emphasis. e.g. 'network_listen', 'modify_system_config', 'install_global_package'"
+        },
+        "max_file_writes": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Maximum number of files the code is allowed to create or modify."
+        },
+        "allowed_write_paths": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Glob patterns for permitted write locations. e.g. ['./output/*', './tmp/*']"
+        },
+        "max_execution_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Hard timeout for Executor runtime."
+        },
+        "network_allowlist": {
+          "type": ["array", "null"],
+          "items": { "type": "string", "format": "hostname" },
+          "description": "If the Executor needs network access, ONLY these hosts are permitted."
+        }
+      }
+    },
+
+    "environment": {
+      "type": ["object", "null"],
+      "description": "Runtime environment requirements for the Executor sandbox.",
+      "additionalProperties": false,
+      "properties": {
+        "python_version": {
+          "type": ["string", "null"],
+          "pattern": "^3\\.[0-9]{1,2}$",
+          "description": "Required Python version. e.g. '3.11'"
+        },
+        "docker_base_image": {
+          "type": ["string", "null"],
+          "description": "Preferred base image. Must be from an approved registry."
+        },
+        "env_vars_required": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["name", "purpose"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+              "purpose": { "type": "string", "maxLength": 300 },
+              "sensitive": {
+                "type": "boolean",
+                "default": true,
+                "description": "If true, the Auditor will verify this value is never logged or exposed in output."
+              }
+            }
+          },
+          "description": "Environment variables the code expects. Values are injected by the Executor, NEVER included in the packet."
+        },
+        "mount_paths": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Host paths to mount into the container (read-only unless in allowed_write_paths)."
+        }
+      }
+    },
+
+    "researcher_notes": {
+      "type": "object",
+      "description": "Free-form observations from the Researcher. Marked as UNTRUSTED — the Auditor should treat these as advisory, not authoritative.",
+      "required": ["summary", "open_questions"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "maxLength": 3000,
+          "description": "High-level summary of findings. This is the primary free-text field and is explicitly tagged as untrusted content in the Auditor's review."
+        },
+        "open_questions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "description": "Unresolved questions the Researcher couldn't answer. Routed to the PM for decision."
+        },
+        "conflicting_sources": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["topic", "source_a", "source_b", "discrepancy"],
+            "additionalProperties": false,
+            "properties": {
+              "topic": { "type": "string" },
+              "source_a": { "type": "string", "format": "uri" },
+              "source_b": { "type": "string", "format": "uri" },
+              "discrepancy": { "type": "string", "maxLength": 500 }
+            }
+          },
+          "description": "Cases where two sources contradicted each other. PM decides which to trust."
+        },
+        "deprecation_warnings": {
+          "type": ["array", "null"],
+          "items": { "type": "string", "maxLength": 500 },
+          "description": "APIs or patterns that are deprecated or end-of-life."
+        }
+      }
+    }
+  }
+}
