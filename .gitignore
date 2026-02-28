@@ -1,1 +1,8 @@
 .worktrees/
+bin/
+*.exe
+*.test
+*.out
+__pycache__/
+*.pyc
+.venv/
