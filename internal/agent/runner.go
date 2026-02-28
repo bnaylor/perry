@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/bnaylor/perry/internal/dispatch"
 	"github.com/bnaylor/perry/internal/llm"
@@ -50,9 +51,25 @@ func (r *Runner) Execute(ctx context.Context, tk *task.Task, role Role, input st
 
 	// Attempt JSON parsing — non-JSON content is not an error
 	var parsed map[string]any
-	if err := json.Unmarshal([]byte(resp.Content), &parsed); err == nil {
+	cleaned := extractJSON(resp.Content)
+	if err := json.Unmarshal([]byte(cleaned), &parsed); err == nil {
 		output.Parsed = parsed
 	}
 
 	return output, nil
+}
+
+// extractJSON strips markdown code fences from content before JSON parsing.
+func extractJSON(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "```") {
+		lines := strings.SplitN(trimmed, "\n", 2)
+		if len(lines) == 2 {
+			rest := lines[1]
+			if idx := strings.LastIndex(rest, "```"); idx >= 0 {
+				return strings.TrimSpace(rest[:idx])
+			}
+		}
+	}
+	return trimmed
 }

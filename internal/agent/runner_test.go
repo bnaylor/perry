@@ -105,3 +105,29 @@ func TestMockAgentRecordsCalls(t *testing.T) {
 	require.Len(t, a.Calls, 1)
 	assert.Equal(t, "write a script", a.Calls[0])
 }
+
+func TestRunnerParsesMarkdownFencedJSON(t *testing.T) {
+	fencedJSON := "```json\n{\"requirements\": [\"req1\"], \"complexity\": \"standard\"}\n```"
+	providers := map[string]llm.Provider{"mock": llm.NewMockProvider("m", fencedJSON)}
+	agents := map[Role]Agent{RoleStrategist: NewMockAgent(RoleStrategist)}
+	runner := NewRunner(agents, providers)
+	tk := task.New("test", "user")
+
+	out, err := runner.Execute(ctx(t), tk, RoleStrategist, "plan", dispatch.Decision{Provider: "mock", Model: "m"})
+	require.NoError(t, err)
+	require.NotNil(t, out.Parsed)
+	assert.Equal(t, "standard", out.Parsed["complexity"])
+}
+
+func TestRunnerParsesGenericFencedJSON(t *testing.T) {
+	fencedJSON := "```\n{\"key\": \"value\"}\n```"
+	providers := map[string]llm.Provider{"mock": llm.NewMockProvider("m", fencedJSON)}
+	agents := map[Role]Agent{RoleStrategist: NewMockAgent(RoleStrategist)}
+	runner := NewRunner(agents, providers)
+	tk := task.New("test", "user")
+
+	out, err := runner.Execute(ctx(t), tk, RoleStrategist, "plan", dispatch.Decision{Provider: "mock", Model: "m"})
+	require.NoError(t, err)
+	require.NotNil(t, out.Parsed)
+	assert.Equal(t, "value", out.Parsed["key"])
+}
