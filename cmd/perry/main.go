@@ -43,12 +43,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Build provider map from environment
-	providerMap := providers.BuildProviderMap(providers.ProviderConfig{
-		AnthropicKey: os.Getenv("ANTHROPIC_API_KEY"),
-		GeminiKey:    os.Getenv("GEMINI_API_KEY"),
-		OllamaURL:    os.Getenv("OLLAMA_URL"),
-	})
+	// Build provider map from routing config
+	providerMap := providers.BuildProviderMap(routingCfg)
 
 	// Register real agents
 	agents := map[agent.Role]agent.Agent{

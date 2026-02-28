@@ -12,6 +12,11 @@ import (
 
 func defaultConfig() Config {
 	return Config{
+		Providers: []ProviderInstanceConfig{
+			{Name: "anthropic", Type: "anthropic"},
+			{Name: "google", Type: "google"},
+			{Name: "ollama", Type: "ollama"},
+		},
 		Defaults: map[string]RouteConfig{
 			"strategist":       {Tier: "cloud", Provider: "anthropic", Model: "claude-sonnet-4-6"},
 			"researcher":       {Tier: "cloud", Provider: "google", Model: "gemini-2.5-pro"},

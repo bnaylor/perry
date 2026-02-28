@@ -7,10 +7,19 @@ import (
 	"github.com/bnaylor/perry/internal/task"
 )
 
+// ProviderInstanceConfig defines a specific instance of an LLM provider.
+type ProviderInstanceConfig struct {
+	Name       string `yaml:"name"`
+	Type       string `yaml:"type"` // "anthropic", "google", "ollama", "openai"
+	BaseURL    string `yaml:"base_url,omitempty"`
+	APIKeyEnv  string `yaml:"api_key_env,omitempty"`
+	ModelAlias string `yaml:"model_alias,omitempty"`
+}
+
 // RouteConfig specifies where to run an agent.
 type RouteConfig struct {
 	Tier     string `yaml:"tier"`     // "local" or "cloud"
-	Provider string `yaml:"provider"` // "anthropic", "google", "ollama"
+	Provider string `yaml:"provider"` // refers to a named instance in Providers list
 	Model    string `yaml:"model"`
 }
 
@@ -22,8 +31,9 @@ type EscalationConfig struct {
 
 // Config holds dispatch routing configuration.
 type Config struct {
-	Defaults   map[string]RouteConfig `yaml:"defaults"`
-	Escalation EscalationConfig       `yaml:"escalation"`
+	Providers  []ProviderInstanceConfig `yaml:"providers"`
+	Defaults   map[string]RouteConfig   `yaml:"defaults"`
+	Escalation EscalationConfig         `yaml:"escalation"`
 }
 
 // Decision is the routing result.
