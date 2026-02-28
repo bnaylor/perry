@@ -38,17 +38,19 @@ func testOrchestrator() *Orchestrator {
 		agent.RoleAuditor:    agent.NewMockAgent(agent.RoleAuditor),
 	}
 	return NewOrchestrator(Config{
-		FSM:    fsm.New(),
-		Store:  task.NewMemStore(),
-		Runner: agent.NewRunner(agents, provider),
+		FSM:   fsm.New(),
+		Store: task.NewMemStore(),
+		Runner: agent.NewRunner(agents, map[string]llm.Provider{
+			"mock": provider,
+		}),
 		Dispatcher: dispatch.New(dispatch.Config{
 			Defaults: map[string]dispatch.RouteConfig{
-				"strategist":       {Tier: "cloud", Provider: "anthropic", Model: "test"},
-				"researcher":       {Tier: "cloud", Provider: "google", Model: "test"},
-				"coder":            {Tier: "local", Provider: "ollama", Model: "test"},
-				"auditor_semantic": {Tier: "cloud", Provider: "anthropic", Model: "test"},
+				"strategist":       {Tier: "cloud", Provider: "mock", Model: "test"},
+				"researcher":       {Tier: "cloud", Provider: "mock", Model: "test"},
+				"coder":            {Tier: "local", Provider: "mock", Model: "test"},
+				"auditor_semantic": {Tier: "cloud", Provider: "mock", Model: "test"},
 			},
-			Escalation: dispatch.EscalationConfig{MaxLocalAttempts: 3, PromoteTo: dispatch.RouteConfig{Tier: "cloud", Provider: "anthropic", Model: "test"}},
+			Escalation: dispatch.EscalationConfig{MaxLocalAttempts: 3, PromoteTo: dispatch.RouteConfig{Tier: "cloud", Provider: "mock", Model: "test"}},
 		}),
 		Policy:   policy.NewEngine(policy.Config{MaxTokensPerTask: 100000, MaxCostPerTask: 5.0}),
 		Audit:    allPassingPipeline(),

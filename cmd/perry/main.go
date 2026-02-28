@@ -41,17 +41,17 @@ func main() {
 	orch := orchestrator.NewOrchestrator(orchestrator.Config{
 		FSM:    fsmMachine,
 		Store:  task.NewMemStore(),
-		Runner: agent.NewRunner(agents, provider),
+		Runner: agent.NewRunner(agents, map[string]llm.Provider{"mock": provider}),
 		Dispatcher: dispatch.New(dispatch.Config{
 			Defaults: map[string]dispatch.RouteConfig{
-				"strategist":       {Tier: "cloud", Provider: "anthropic", Model: "claude-sonnet-4-6"},
-				"researcher":       {Tier: "cloud", Provider: "google", Model: "gemini-2.5-pro"},
-				"coder":            {Tier: "local", Provider: "ollama", Model: "qwen2.5-coder:32b"},
-				"auditor_semantic": {Tier: "cloud", Provider: "anthropic", Model: "claude-sonnet-4-6"},
+				"strategist":       {Tier: "cloud", Provider: "mock", Model: "mock-model"},
+				"researcher":       {Tier: "cloud", Provider: "mock", Model: "mock-model"},
+				"coder":            {Tier: "local", Provider: "mock", Model: "mock-model"},
+				"auditor_semantic": {Tier: "cloud", Provider: "mock", Model: "mock-model"},
 			},
 			Escalation: dispatch.EscalationConfig{
 				MaxLocalAttempts: 3,
-				PromoteTo:        dispatch.RouteConfig{Tier: "cloud", Provider: "anthropic", Model: "claude-sonnet-4-6"},
+				PromoteTo:        dispatch.RouteConfig{Tier: "cloud", Provider: "mock", Model: "mock-model"},
 			},
 		}),
 		Policy: policy.NewEngine(policy.Config{

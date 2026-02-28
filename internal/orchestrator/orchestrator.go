@@ -94,14 +94,22 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		return task.StatePlanning, "auto", nil
 
 	case task.StatePlanning:
-		_, err := o.runner.Execute(ctx, tk, agent.RoleStrategist, tk.Description)
+		decision, err := o.dispatcher.Route(ctx, tk, string(agent.RoleStrategist))
+		if err != nil {
+			return task.StateHumanReview, "routing error", nil
+		}
+		_, err = o.runner.Execute(ctx, tk, agent.RoleStrategist, tk.Description, decision)
 		if err != nil {
 			return task.StateHumanReview, "strategist error", nil
 		}
 		return task.StateResearching, "requirements ready", nil
 
 	case task.StateResearching:
-		_, err := o.runner.Execute(ctx, tk, agent.RoleResearcher, "gather context")
+		decision, err := o.dispatcher.Route(ctx, tk, string(agent.RoleResearcher))
+		if err != nil {
+			return "", "", fmt.Errorf("routing failed: %w", err)
+		}
+		_, err = o.runner.Execute(ctx, tk, agent.RoleResearcher, "gather context", decision)
 		if err != nil {
 			return "", "", fmt.Errorf("researcher failed: %w", err)
 		}
@@ -112,7 +120,11 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		return task.StateCoding, "packet validated", nil
 
 	case task.StateCoding:
-		_, err := o.runner.Execute(ctx, tk, agent.RoleCoder, "generate code")
+		decision, err := o.dispatcher.Route(ctx, tk, string(agent.RoleCoder))
+		if err != nil {
+			return "", "", fmt.Errorf("routing failed: %w", err)
+		}
+		_, err = o.runner.Execute(ctx, tk, agent.RoleCoder, "generate code", decision)
 		if err != nil {
 			return "", "", fmt.Errorf("coder failed: %w", err)
 		}
