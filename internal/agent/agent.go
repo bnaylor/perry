@@ -9,6 +9,7 @@ import (
 type AgentOutput struct {
 	Role    Role
 	Content string
+	Parsed  map[string]any // parsed JSON from Content (nil if not valid JSON)
 	Usage   llm.Usage
 }
 
