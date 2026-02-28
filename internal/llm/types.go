@@ -8,6 +8,7 @@ type Message struct {
 
 // CompletionRequest is the provider-agnostic request.
 type CompletionRequest struct {
+	Model       string         `json:"model,omitempty"`
 	Messages    []Message      `json:"messages"`
 	MaxTokens   int            `json:"max_tokens,omitempty"`
 	Temperature float64        `json:"temperature,omitempty"`
