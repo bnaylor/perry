@@ -21,13 +21,3 @@ Refined the role of the Strategist to be the owner of the "Working Set" for work
 
 - **Status:** DESIGN LOCKED
 - **Changes:** Updated `docs/agentic_design/proposal_codebase_aware_evolution.md` to shift "Codebase Surgeon" responsibilities from the Researcher to the Strategist.
-
-## Future Phases (Updated Roadmap)
-
-### Phase 3: The Architect Roundtable (Design Loop)
-- **Goal:** Implement the `IDEATING` and `RE_IDEATING` states in the FSM.
-- **Key Work:** Moderator service, internal `RoundtableLog`, and Discord mirroring sidecar.
-
-### Phase 4: Secure Workspace & Adversarial Audit
-- **Goal:** Land the "Shadow Auditor" and the "Mirror Cage" layered sandbox.
-- **Key Work:** Layered OverlayFS executor, DeepSeek-R1 adversarial prompting, and PoC verification loop.

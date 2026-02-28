@@ -67,6 +67,11 @@ The Executor writes to an ephemeral `/out` directory. The Notary (non-agent serv
 
 **Phase 5: Advanced platform.** Sovereign Cache (agent persistence), long-term state manager, packet signing, non-coding task workflows.
 
+**Future / Post-v1 Ideas:**
+- **The Architect Roundtable:** Multi-model design loop (Claude, Gemini, Local) with a token-based protocol and Discord mirroring to eliminate the human "message bus" during ideation.
+- **Shadow Auditor (Adversarial Audit):** Final audit gate where a "Red Team" agent attempts to generate a working PoC exploit against the Coder's output. Falsifiable security: "prove the exploit or the finding is dismissed."
+- **Sovereign Local Cluster:** Expanding local compute to multiple nodes (e.g., dual NVIDIA/Khadas Mind nodes) for simultaneous reasoning and safety filtering.
+
 ## Where The Design Came From
 
 The architecture was developed in a three-way discussion between the project owner, Claude, and Gemini. The full discussion log is in `docs/agentic_design/Secure Agentic Loop Platform Architecture.md` (very long — read this doc instead unless you need deep context on a specific design decision). Claude-generated specs for the Context Packet, Auditor Pipeline, and PM Authority Split are in `docs/agentic_design/claude_artifacts/`.
