@@ -5,6 +5,7 @@ package executor
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 
@@ -13,6 +14,16 @@ import (
 	"github.com/docker/docker/api/types/network"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+// dockerStdoutFrame wraps data in a Docker multiplexed stream stdout frame.
+// Docker log frames: [stream_type(1 byte), 0, 0, 0, size(4 bytes big-endian), payload].
+func dockerStdoutFrame(data string) []byte {
+	payload := []byte(data)
+	header := make([]byte, 8)
+	header[0] = 1 // stdout
+	binary.BigEndian.PutUint32(header[4:], uint32(len(payload)))
+	return append(header, payload...)
+}
 
 type mockDockerClient struct {
 	pullErr      error
@@ -62,7 +73,8 @@ func (m *mockDockerClient) ContainerLogs(_ context.Context, _ string, _ containe
 	if m.logsErr != nil {
 		return nil, m.logsErr
 	}
-	return io.NopCloser(bytes.NewReader([]byte(m.logsData))), nil
+	// Return Docker multiplexed stream format (same as real Docker daemon).
+	return io.NopCloser(bytes.NewReader(dockerStdoutFrame(m.logsData))), nil
 }
 
 func (m *mockDockerClient) CopyToContainer(_ context.Context, _ string, _ string, _ io.Reader, _ container.CopyToContainerOptions) error {

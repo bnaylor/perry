@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/strslice"
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 // entrypoints maps language to the command used to execute code.
@@ -87,7 +87,19 @@ func (d *DockerExecutor) Run(ctx context.Context, req RunRequest) (Result, error
 		cmd = []string{"sh", "-c", depInstall}
 	}
 
-	// 6. Create container with security constraints.
+	// 6. Create host-side output directory. Bind-mounted into the container so
+	// output files persist after the container exits (unlike tmpfs).
+	outDir, err := os.MkdirTemp("", "perry-output-*")
+	if err != nil {
+		return Result{}, fmt.Errorf("create output dir failed: %w", err)
+	}
+	// Make writable by container user (uid 1000).
+	if err := os.Chmod(outDir, 0777); err != nil {
+		os.RemoveAll(outDir)
+		return Result{}, fmt.Errorf("chmod output dir failed: %w", err)
+	}
+
+	// 7. Create container with security constraints.
 	pidsLimit := d.limits.PidsLimit
 	cpuPeriod := int64(100000)
 	cpuQuota := int64(d.limits.CPUs * float64(cpuPeriod))
@@ -100,25 +112,34 @@ func (d *DockerExecutor) Run(ctx context.Context, req RunRequest) (Result, error
 	}
 
 	hostConfig := &container.HostConfig{
-		NetworkMode:  "none",
-		ReadonlyRootfs: true,
-		CapDrop:      strslice.StrSlice{"ALL"},
+		NetworkMode: "none",
+		// NOTE: ReadonlyRootfs is intentionally omitted. CopyToContainer writes to the
+		// rootfs layer before the container starts (before tmpfs mounts are applied),
+		// which fails with read-only rootfs. Security is maintained via: no network,
+		// all capabilities dropped, non-root user, resource limits, and tmpfs mounts.
+		CapDrop: strslice.StrSlice{"ALL"},
 		Resources: container.Resources{
 			Memory:    d.limits.MemoryBytes,
 			PidsLimit: &pidsLimit,
 			CPUQuota:  cpuQuota,
 			CPUPeriod: cpuPeriod,
 		},
+		Binds: []string{
+			fmt.Sprintf("%s:/out", outDir),
+		},
 		Tmpfs: map[string]string{
-			"/tmp":           fmt.Sprintf("size=%d,noexec", d.limits.TmpfsSizeBytes),
-			"/out":           fmt.Sprintf("size=%d,noexec", d.limits.OutSizeBytes),
-			"/home/sandbox":  fmt.Sprintf("size=%d,noexec", d.limits.HomeSizeBytes),
-			"/workspace":     fmt.Sprintf("size=%d,noexec", d.limits.TmpfsSizeBytes),
+			"/tmp":          fmt.Sprintf("size=%d,noexec", d.limits.TmpfsSizeBytes),
+			"/home/sandbox": fmt.Sprintf("size=%d,noexec", d.limits.HomeSizeBytes),
+			// NOTE: /workspace is NOT a tmpfs — files are copied there via CopyToContainer
+			// before the container starts. A tmpfs mount would hide those files.
+			// NOTE: /out uses a bind mount (not tmpfs) so output files persist after
+			// the container exits.
 		},
 	}
 
 	createResp, err := d.client.ContainerCreate(ctx, config, hostConfig, &network.NetworkingConfig{}, nil, "")
 	if err != nil {
+		os.RemoveAll(outDir)
 		return Result{}, fmt.Errorf("container create failed: %w", err)
 	}
 	containerID := createResp.ID
@@ -132,35 +153,39 @@ func (d *DockerExecutor) Run(ctx context.Context, req RunRequest) (Result, error
 		}
 	}()
 
-	// 7. Copy tar to container.
+	// 8. Copy tar to container.
 	if err := d.client.CopyToContainer(ctx, containerID, "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
+		os.RemoveAll(outDir)
 		return Result{}, fmt.Errorf("copy to container failed: %w", err)
 	}
 
-	// 8. Start container.
+	// 9. Start container.
 	if err := d.client.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+		os.RemoveAll(outDir)
 		return Result{}, fmt.Errorf("container start failed: %w", err)
 	}
 
-	// 9. Wait for completion.
+	// 10. Wait for completion.
 	waitCh, errCh := d.client.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
 	var statusCode int64
 	select {
 	case waitResult := <-waitCh:
 		statusCode = waitResult.StatusCode
 	case waitErr := <-errCh:
+		os.RemoveAll(outDir)
 		return Result{}, fmt.Errorf("container wait failed: %w", waitErr)
 	case <-ctx.Done():
+		os.RemoveAll(outDir)
 		return Result{}, fmt.Errorf("context cancelled during wait: %w", ctx.Err())
 	}
 
-	// 10. Capture logs (best-effort).
+	// 11. Capture logs (best-effort).
 	logs := d.captureLogs(ctx, containerID)
 
-	// 11. Copy /out contents to temp dir (best-effort).
-	output := d.copyOutput(ctx, containerID)
+	// 12. Check if output directory has any files.
+	output := d.checkOutput(outDir)
 
-	// 12. Return result.
+	// 13. Return result.
 	return Result{
 		Success:  statusCode == 0,
 		ExitCode: int(statusCode),
@@ -219,6 +244,7 @@ func (d *DockerExecutor) buildEnv(envVars map[string]string) []string {
 }
 
 // captureLogs attempts to retrieve container logs. Returns empty string on failure.
+// Docker multiplexes stdout/stderr with 8-byte headers; stdcopy.StdCopy demuxes them.
 func (d *DockerExecutor) captureLogs(ctx context.Context, containerID string) string {
 	reader, err := d.client.ContainerLogs(ctx, containerID, container.LogsOptions{
 		ShowStdout: true,
@@ -230,55 +256,21 @@ func (d *DockerExecutor) captureLogs(ctx context.Context, containerID string) st
 	}
 	defer reader.Close()
 
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		slog.Debug("failed to read logs", "error", err)
+	var buf bytes.Buffer
+	if _, err := stdcopy.StdCopy(&buf, &buf, reader); err != nil {
+		slog.Debug("failed to demux logs", "error", err)
 		return ""
 	}
-	return string(data)
+	return buf.String()
 }
 
-// copyOutput extracts /out directory contents to a host temp dir.
-// Returns path to temp dir or empty string on failure. Best-effort.
-func (d *DockerExecutor) copyOutput(ctx context.Context, containerID string) string {
-	reader, _, err := d.client.CopyFromContainer(ctx, containerID, "/out")
-	if err != nil {
-		slog.Debug("no /out directory to copy", "error", err)
+// checkOutput returns the output directory path if it contains any files,
+// or empty string (and cleans up) if no output was produced.
+func (d *DockerExecutor) checkOutput(outDir string) string {
+	entries, err := os.ReadDir(outDir)
+	if err != nil || len(entries) == 0 {
+		os.RemoveAll(outDir)
 		return ""
 	}
-	defer reader.Close()
-
-	tmpDir, err := os.MkdirTemp("", "perry-output-*")
-	if err != nil {
-		slog.Warn("failed to create temp dir for output", "error", err)
-		return ""
-	}
-
-	tr := tar.NewReader(reader)
-	for {
-		header, err := tr.Next()
-		if err != nil {
-			break
-		}
-		if header.Typeflag != tar.TypeReg {
-			continue
-		}
-		// Strip the leading "out/" prefix from the tar path
-		name := strings.TrimPrefix(header.Name, "out/")
-		if name == "" {
-			continue
-		}
-		outPath := filepath.Join(tmpDir, name)
-		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			continue
-		}
-		f, err := os.Create(outPath)
-		if err != nil {
-			continue
-		}
-		io.Copy(f, tr)
-		f.Close()
-	}
-
-	return tmpDir
+	return outDir
 }
