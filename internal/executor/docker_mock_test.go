@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
@@ -66,7 +65,7 @@ func (m *mockDockerClient) ContainerLogs(_ context.Context, _ string, _ containe
 	return io.NopCloser(bytes.NewReader([]byte(m.logsData))), nil
 }
 
-func (m *mockDockerClient) CopyToContainer(_ context.Context, _ string, _ string, _ io.Reader, _ types.CopyToContainerOptions) error {
+func (m *mockDockerClient) CopyToContainer(_ context.Context, _ string, _ string, _ io.Reader, _ container.CopyToContainerOptions) error {
 	return m.copyToErr
 }
 

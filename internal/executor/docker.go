@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
@@ -132,7 +133,7 @@ func (d *DockerExecutor) Run(ctx context.Context, req RunRequest) (Result, error
 	}()
 
 	// 7. Copy tar to container.
-	if err := d.client.CopyToContainer(ctx, containerID, "/", tarBuf, types.CopyToContainerOptions{}); err != nil {
+	if err := d.client.CopyToContainer(ctx, containerID, "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
 		return Result{}, fmt.Errorf("copy to container failed: %w", err)
 	}
 
@@ -237,25 +238,47 @@ func (d *DockerExecutor) captureLogs(ctx context.Context, containerID string) st
 	return string(data)
 }
 
-// copyOutput attempts to copy /out from the container. Returns path to temp dir or empty string.
+// copyOutput extracts /out directory contents to a host temp dir.
+// Returns path to temp dir or empty string on failure. Best-effort.
 func (d *DockerExecutor) copyOutput(ctx context.Context, containerID string) string {
 	reader, _, err := d.client.CopyFromContainer(ctx, containerID, "/out")
 	if err != nil {
-		slog.Debug("failed to copy output", "error", err)
+		slog.Debug("no /out directory to copy", "error", err)
 		return ""
 	}
 	defer reader.Close()
 
-	data, err := io.ReadAll(reader)
+	tmpDir, err := os.MkdirTemp("", "perry-output-*")
 	if err != nil {
-		slog.Debug("failed to read output", "error", err)
-		return ""
-	}
-	if len(data) == 0 {
+		slog.Warn("failed to create temp dir for output", "error", err)
 		return ""
 	}
 
-	// For now, return a marker that output was captured. In a future phase,
-	// this will write to a temp directory and return the path.
-	return string(data)
+	tr := tar.NewReader(reader)
+	for {
+		header, err := tr.Next()
+		if err != nil {
+			break
+		}
+		if header.Typeflag != tar.TypeReg {
+			continue
+		}
+		// Strip the leading "out/" prefix from the tar path
+		name := strings.TrimPrefix(header.Name, "out/")
+		if name == "" {
+			continue
+		}
+		outPath := filepath.Join(tmpDir, name)
+		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+			continue
+		}
+		f, err := os.Create(outPath)
+		if err != nil {
+			continue
+		}
+		io.Copy(f, tr)
+		f.Close()
+	}
+
+	return tmpDir
 }
