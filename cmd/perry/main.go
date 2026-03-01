@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/bnaylor/perry/internal/agent"
 	"github.com/bnaylor/perry/internal/audit"
@@ -26,12 +28,16 @@ func main() {
 
 	ctx := context.Background()
 
-	// Get task description from args
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: perry <task description>\n")
+	// Parse flags
+	dbPath := flag.String("db-path", ".perry/perry.db", "path to SQLite database")
+	flag.Parse()
+
+	// Get task description from remaining args
+	if flag.NArg() < 1 {
+		fmt.Fprintf(os.Stderr, "Usage: perry [--db-path path] <task description>\n")
 		os.Exit(1)
 	}
-	taskDesc := os.Args[1]
+	taskDesc := flag.Arg(0)
 
 	// Load config
 	routingCfg, err := config.LoadRoutingConfig("configs/routing.yaml")
@@ -83,8 +89,12 @@ func main() {
 		exec = executor.NewDockerExecutor(dockerClient, "python:3.12-slim", executor.DefaultSandboxLimits())
 	}
 
-	// Open storage (in-memory for now; Task 7 will wire a persistent path)
-	store, err := storage.NewStore(":memory:")
+	// Open storage
+	if err := os.MkdirAll(filepath.Dir(*dbPath), 0755); err != nil {
+		slog.Error("failed to create database directory", "error", err)
+		os.Exit(1)
+	}
+	store, err := storage.NewStore(*dbPath)
 	if err != nil {
 		slog.Error("failed to open storage", "error", err)
 		os.Exit(1)
