@@ -185,7 +185,40 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		}
 
 	case task.StateExecuting:
-		result, err := o.executor.Run(ctx, executor.RunRequest{Code: "placeholder"})
+		// Retrieve coder output for execution
+		code := ""
+		language := "python"
+		var deps []string
+		if coderOutput, ok := o.outputs[outputKey(tk.ID, agent.RoleCoder)]; ok {
+			if codeVal, ok := coderOutput.Parsed["code"]; ok {
+				if s, ok := codeVal.(string); ok {
+					code = s
+				}
+			}
+			if code == "" {
+				code = coderOutput.Content
+			}
+			if langVal, ok := coderOutput.Parsed["language"]; ok {
+				if s, ok := langVal.(string); ok {
+					language = s
+				}
+			}
+			if depsVal, ok := coderOutput.Parsed["dependencies"]; ok {
+				if depsSlice, ok := depsVal.([]any); ok {
+					for _, d := range depsSlice {
+						if s, ok := d.(string); ok {
+							deps = append(deps, s)
+						}
+					}
+				}
+			}
+		}
+		result, err := o.executor.Run(ctx, executor.RunRequest{
+			Code:         code,
+			Language:     language,
+			Dependencies: deps,
+			TimeoutSec:   60,
+		})
 		if err != nil {
 			return task.StateFailed, "executor error", nil
 		}
