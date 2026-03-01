@@ -54,12 +54,12 @@ func main() {
 	// Build provider map from routing config
 	providerMap := providers.BuildProviderMap(routingCfg)
 
-	// Register real agents
 	agents := map[agent.Role]agent.Agent{
-		agent.RoleStrategist: agent.NewStrategist(),
-		agent.RoleResearcher: agent.NewResearcher(),
-		agent.RoleCoder:      agent.NewCoder(),
-		agent.RoleAuditor:    agent.NewAuditor(),
+		agent.RoleStrategist:    agent.NewStrategist(),
+		agent.RoleResearcher:    agent.NewResearcher(),
+		agent.RoleCoder:         agent.NewCoder(),
+		agent.RoleAuditor:       agent.NewAuditor(),
+		agent.RoleShadowAuditor: agent.NewShadowAuditor(),
 	}
 
 	// Build orchestrator
