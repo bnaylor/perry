@@ -35,7 +35,8 @@ func testOrchestrator() *Orchestrator {
 		agent.RoleStrategist: agent.NewMockAgent(agent.RoleStrategist),
 		agent.RoleResearcher: agent.NewMockAgent(agent.RoleResearcher),
 		agent.RoleCoder:      agent.NewMockAgent(agent.RoleCoder),
-		agent.RoleAuditor:    agent.NewMockAgent(agent.RoleAuditor),
+		agent.RoleAuditor:       agent.NewMockAgent(agent.RoleAuditor),
+		agent.RoleShadowAuditor: agent.NewMockAgent(agent.RoleShadowAuditor),
 	}
 	return NewOrchestrator(Config{
 		FSM:   fsm.New(),
@@ -49,6 +50,7 @@ func testOrchestrator() *Orchestrator {
 				"researcher":       {Tier: "cloud", Provider: "mock", Model: "test"},
 				"coder":            {Tier: "local", Provider: "mock", Model: "test"},
 				"auditor_semantic": {Tier: "cloud", Provider: "mock", Model: "test"},
+				"auditor_shadow":   {Tier: "cloud", Provider: "mock", Model: "test"},
 			},
 			Escalation: dispatch.EscalationConfig{MaxLocalAttempts: 3, PromoteTo: dispatch.RouteConfig{Tier: "cloud", Provider: "mock", Model: "test"}},
 		}),
@@ -83,6 +85,7 @@ func TestOrchestratorStepThroughHappyPath(t *testing.T) {
 		task.StatePacketValidation,
 		task.StateCoding,
 		task.StateAuditing,
+		task.StateShadowAuditing,
 		task.StateExecuting,
 		task.StateOutputReview,
 		task.StateCompleted,
@@ -101,7 +104,8 @@ func TestOrchestratorPacketAuditRejectsInvalidPacket(t *testing.T) {
 		agent.RoleStrategist: agent.NewMockAgent(agent.RoleStrategist),
 		agent.RoleResearcher: agent.NewMockAgent(agent.RoleResearcher),
 		agent.RoleCoder:      agent.NewMockAgent(agent.RoleCoder),
-		agent.RoleAuditor:    agent.NewMockAgent(agent.RoleAuditor),
+		agent.RoleAuditor:       agent.NewMockAgent(agent.RoleAuditor),
+		agent.RoleShadowAuditor: agent.NewMockAgent(agent.RoleShadowAuditor),
 	}
 
 	orch := NewOrchestrator(Config{
@@ -116,6 +120,7 @@ func TestOrchestratorPacketAuditRejectsInvalidPacket(t *testing.T) {
 				"researcher":       {Tier: "cloud", Provider: "mock", Model: "test"},
 				"coder":            {Tier: "local", Provider: "mock", Model: "test"},
 				"auditor_semantic": {Tier: "cloud", Provider: "mock", Model: "test"},
+				"auditor_shadow":   {Tier: "cloud", Provider: "mock", Model: "test"},
 			},
 			Escalation: dispatch.EscalationConfig{MaxLocalAttempts: 3, PromoteTo: dispatch.RouteConfig{Tier: "cloud", Provider: "mock", Model: "test"}},
 		}),

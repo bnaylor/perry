@@ -4,8 +4,9 @@ package agent
 type Role string
 
 const (
-	RoleStrategist Role = "strategist"
-	RoleResearcher Role = "researcher"
-	RoleCoder      Role = "coder"
-	RoleAuditor    Role = "auditor_semantic"
+	RoleStrategist    Role = "strategist"
+	RoleResearcher    Role = "researcher"
+	RoleCoder         Role = "coder"
+	RoleAuditor       Role = "auditor_semantic"
+	RoleShadowAuditor Role = "auditor_shadow"
 )

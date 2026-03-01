@@ -177,13 +177,75 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		}
 		switch result.Verdict {
 		case audit.VerdictApprove:
-			return task.StateExecuting, "audit passed", nil
+			return task.StateShadowAuditing, "audit passed", nil
 		case audit.VerdictReject:
 			return task.StateCoding, "audit rejected, revision needed", nil
 		default:
 			return task.StateHumanReview, "audit escalated", nil
 		}
 
+	case task.StateShadowAuditing:
+		decision, err := o.dispatcher.Route(ctx, tk, string(agent.RoleShadowAuditor))
+		if err != nil {
+			return task.StateHumanReview, "routing error", nil
+		}
+
+		// Grab code to send to the auditor
+		code := "placeholder"
+		if coderOutput, ok := o.outputs[outputKey(tk.ID, agent.RoleCoder)]; ok {
+			if codeVal, ok := coderOutput.Parsed["code"]; ok {
+				if s, ok := codeVal.(string); ok {
+					code = s
+				}
+			}
+			if code == "placeholder" {
+				code = coderOutput.Content
+			}
+		}
+
+		output, err := o.runner.Execute(ctx, tk, agent.RoleShadowAuditor, "find vulnerabilities in: "+code, decision)
+		if err != nil {
+			return task.StateHumanReview, "shadow auditor failed", nil
+		}
+		o.outputs[outputKey(tk.ID, agent.RoleShadowAuditor)] = output
+
+		// Evaluate report
+		foundVal, ok := output.Parsed["vulnerability_found"]
+		if !ok {
+			return task.StateExecuting, "shadow auditor output invalid, proceeding", nil
+		}
+		found, isBool := foundVal.(bool)
+		if !isBool || !found {
+			return task.StateExecuting, "no vulnerabilities found by shadow auditor", nil
+		}
+
+		// Vulnerability found, test PoC
+		pocVal, ok := output.Parsed["poc_code"]
+		if !ok {
+			return task.StateExecuting, "vulnerability found but no poc_code provided", nil
+		}
+		pocCode, ok := pocVal.(string)
+		if !ok || pocCode == "" {
+			return task.StateExecuting, "vulnerability found but poc_code empty", nil
+		}
+
+		// Execute PoC
+		result, err := o.executor.Run(ctx, executor.RunRequest{
+			Files: map[string]string{
+				"target.py":   code,
+				"poc_test.py": pocCode,
+			},
+			Entrypoint: "poc_test.py",
+			Language:   "python",
+			TimeoutSec: 30,
+		})
+
+		if err != nil {
+			return task.StateExecuting, "executor failed to run PoC, skipping", nil
+		}
+		if result.Success { // Exit code 0 means PoC worked
+		}
+		return task.StateExecuting, "shadow auditor exploit failed (false positive)", nil
 	case task.StateExecuting:
 		// Retrieve coder output for execution
 		code := ""

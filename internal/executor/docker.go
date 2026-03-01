@@ -79,7 +79,16 @@ func (d *DockerExecutor) Run(ctx context.Context, req RunRequest) (Result, error
 	}
 
 	// 5. Build container command.
-	cmd := entrypoints[req.Language]
+	var cmd []string
+	if req.Language == "python" {
+		ep := req.Entrypoint
+		if ep == "" {
+			ep = "main.py"
+		}
+		cmd = []string{"python3", "/workspace/" + ep}
+	} else {
+		cmd = entrypoints[req.Language]
+	}
 	if len(req.Dependencies) > 0 {
 		// Install deps before running code.
 		depInstall := fmt.Sprintf("pip install --user --no-cache-dir -r /workspace/requirements.txt && %s",
@@ -194,23 +203,39 @@ func (d *DockerExecutor) Run(ctx context.Context, req RunRequest) (Result, error
 	}, nil
 }
 
-// buildTar creates a tar archive containing the code file and optional requirements.txt.
+// buildTar creates a tar archive containing the code files and optional requirements.txt.
 func (d *DockerExecutor) buildTar(req RunRequest) (*bytes.Buffer, error) {
 	buf := &bytes.Buffer{}
 	tw := tar.NewWriter(buf)
 
-	// Add code file.
-	fileName := fileNames[req.Language]
-	codeBytes := []byte(req.Code)
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "workspace/" + fileName,
-		Mode: 0644,
-		Size: int64(len(codeBytes)),
-	}); err != nil {
-		return nil, err
+	// Add single code file if provided (legacy API).
+	if req.Code != "" {
+		fileName := fileNames[req.Language]
+		codeBytes := []byte(req.Code)
+		if err := tw.WriteHeader(&tar.Header{
+			Name: "workspace/" + fileName,
+			Mode: 0644,
+			Size: int64(len(codeBytes)),
+		}); err != nil {
+			return nil, err
+		}
+		if _, err := tw.Write(codeBytes); err != nil {
+			return nil, err
+		}
 	}
-	if _, err := tw.Write(codeBytes); err != nil {
-		return nil, err
+
+	// Add multi-file map.
+	for name, content := range req.Files {
+		if err := tw.WriteHeader(&tar.Header{
+			Name: "workspace/" + name,
+			Mode: 0644,
+			Size: int64(len(content)),
+		}); err != nil {
+			return nil, err
+		}
+		if _, err := tw.Write([]byte(content)); err != nil {
+			return nil, err
+		}
 	}
 
 	// Add requirements.txt if there are dependencies.

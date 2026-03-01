@@ -17,6 +17,7 @@ const (
 	StatePacketValidation State = "PACKET_VALIDATION"
 	StateCoding           State = "CODING"
 	StateAuditing         State = "AUDITING"
+	StateShadowAuditing   State = "SHADOW_AUDITING"
 	StateExecuting        State = "EXECUTING"
 	StateOutputReview     State = "OUTPUT_REVIEW"
 	StateCompleted        State = "COMPLETED"

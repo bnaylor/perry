@@ -54,6 +54,7 @@ func TestFullHappyPath(t *testing.T) {
 		task.StatePacketValidation,
 		task.StateCoding,
 		task.StateAuditing,
+		task.StateShadowAuditing,
 		task.StateExecuting,
 		task.StateOutputReview,
 		task.StateCompleted,

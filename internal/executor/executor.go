@@ -5,6 +5,8 @@ import "context"
 // RunRequest describes what to execute in the sandbox.
 type RunRequest struct {
 	Code         string
+	Files        map[string]string // Multi-file support: filename -> content
+	Entrypoint   string            // Entrypoint file to run, defaults to main.py or language equivalent if empty
 	Language     string
 	Dependencies []string
 	EnvVars      map[string]string

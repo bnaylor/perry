@@ -80,7 +80,7 @@ func TestIntegration_Timeout(t *testing.T) {
 func TestIntegration_NetworkIsolation(t *testing.T) {
 	exec := newRealExecutor(t)
 	result, err := exec.Run(context.Background(), RunRequest{
-		Code: "import urllib.request\ntry:\n    urllib.request.urlopen('https://example.com', timeout=5)\n    print('NETWORK_AVAILABLE')\nexcept Exception as e:\n    print(f'NETWORK_BLOCKED: {e}')",
+		Code:       "import urllib.request\ntry:\n    urllib.request.urlopen('https://example.com', timeout=5)\n    print('NETWORK_AVAILABLE')\nexcept Exception as e:\n    print(f'NETWORK_BLOCKED: {e}')",
 		Language:   "python",
 		TimeoutSec: 15,
 	})
