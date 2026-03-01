@@ -273,7 +273,8 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		if err != nil {
 			return task.StateExecuting, "executor failed to run PoC, skipping", nil
 		}
-		if result.Success { // Exit code 0 means PoC worked
+		if result.Success { // Exit code 0 means PoC worked — vulnerability confirmed
+			return task.StateCoding, "shadow auditor exploit verified, revision needed", nil
 		}
 		return task.StateExecuting, "shadow auditor exploit failed (false positive)", nil
 
