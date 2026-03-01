@@ -95,6 +95,59 @@ func TestOrchestratorStepThroughHappyPath(t *testing.T) {
 	}
 }
 
+func TestOrchestratorPacketAuditRejectsInvalidPacket(t *testing.T) {
+	provider := llm.NewMockProvider("test-model", "mock response")
+	agents := map[agent.Role]agent.Agent{
+		agent.RoleStrategist: agent.NewMockAgent(agent.RoleStrategist),
+		agent.RoleResearcher: agent.NewMockAgent(agent.RoleResearcher),
+		agent.RoleCoder:      agent.NewMockAgent(agent.RoleCoder),
+		agent.RoleAuditor:    agent.NewMockAgent(agent.RoleAuditor),
+	}
+
+	orch := NewOrchestrator(Config{
+		FSM:   fsm.New(),
+		Store: task.NewMemStore(),
+		Runner: agent.NewRunner(agents, map[string]llm.Provider{
+			"mock": provider,
+		}),
+		Dispatcher: dispatch.New(dispatch.Config{
+			Defaults: map[string]dispatch.RouteConfig{
+				"strategist":       {Tier: "cloud", Provider: "mock", Model: "test"},
+				"researcher":       {Tier: "cloud", Provider: "mock", Model: "test"},
+				"coder":            {Tier: "local", Provider: "mock", Model: "test"},
+				"auditor_semantic": {Tier: "cloud", Provider: "mock", Model: "test"},
+			},
+			Escalation: dispatch.EscalationConfig{MaxLocalAttempts: 3, PromoteTo: dispatch.RouteConfig{Tier: "cloud", Provider: "mock", Model: "test"}},
+		}),
+		Policy:      policy.NewEngine(policy.Config{MaxTokensPerTask: 100000, MaxCostPerTask: 5.0}),
+		Audit:       allPassingPipeline(),
+		PacketAudit: audit.NewPipeline(&rejectingGate{}),
+		Executor:    executor.NewMockExecutor(executor.Result{Success: true, Output: "result.json", ExitCode: 0}),
+		Notary:      notary.NewMockNotary(true),
+	})
+
+	ctx := context.Background()
+	tk, err := orch.Submit(ctx, "test packet rejection", "user-1")
+	require.NoError(t, err)
+
+	// Step to PACKET_VALIDATION
+	for tk.State != task.StatePacketValidation {
+		require.NoError(t, orch.Step(ctx, tk))
+	}
+
+	// Packet audit rejects → should go back to RESEARCHING
+	err = orch.Step(ctx, tk)
+	require.NoError(t, err)
+	assert.Equal(t, task.StateResearching, tk.State)
+}
+
+type rejectingGate struct{}
+
+func (g *rejectingGate) Name() string { return "reject" }
+func (g *rejectingGate) Run(_ context.Context, _ audit.AuditInput) audit.GateResult {
+	return audit.GateResult{Pass: false, Gate: "reject", Findings: []string{"packet invalid"}}
+}
+
 func TestOrchestratorStepAtCompletedIsNoop(t *testing.T) {
 	orch := testOrchestrator()
 	ctx := context.Background()
