@@ -1,10 +1,10 @@
 providers:
   - name: local-cuda
     type: ollama
-    base_url: "http://localhost:11434" # Node 1 (Linux/4070 Ti)
+    base_url: "http://10.3.2.8:11434" # Node 1 (diffuser/4070 Ti)
   - name: local-npu
     type: ollama
-    base_url: "http://khadas-mind:11434" # Node 2 (Khadas Mind/4060)
+    base_url: "http://10.3.2.48:11434" # Node 2 (mink/4060 Ti)
   - name: cloud-anthropic
     type: anthropic
     api_key_env: "ANTHROPIC_API_KEY"
@@ -24,11 +24,11 @@ defaults:
   coder:
     tier: local
     provider: local-cuda
-    model: "qwen2.5-coder:32b"
+    model: "qwen3:14b"
   auditor:
     tier: local
     provider: local-npu
-    model: "deepseek-r1:32b"
+    model: "deepseek-r1:14b"
 
 escalation:
   max_local_attempts: 2
