@@ -17,6 +17,7 @@ import (
 	"github.com/bnaylor/perry/internal/policy"
 	"github.com/bnaylor/perry/internal/providers"
 	"github.com/bnaylor/perry/internal/task"
+	dkclient "github.com/docker/docker/client"
 )
 
 func main() {
@@ -71,6 +72,16 @@ func main() {
 		audit.NewContentScanGate(scriptDir),
 	)
 
+	// Build executor — Docker if available, mock fallback
+	var exec executor.Executor
+	dockerClient, err := dkclient.NewClientWithOpts(dkclient.FromEnv, dkclient.WithAPIVersionNegotiation())
+	if err != nil {
+		slog.Warn("Docker not available, using mock executor", "error", err)
+		exec = executor.NewMockExecutor(executor.Result{Success: true, Output: "mock-result", ExitCode: 0})
+	} else {
+		exec = executor.NewDockerExecutor(dockerClient, "python:3.12-slim", executor.DefaultSandboxLimits())
+	}
+
 	orch := orchestrator.NewOrchestrator(orchestrator.Config{
 		FSM:         fsmMachine,
 		Store:       task.NewMemStore(),
@@ -79,7 +90,7 @@ func main() {
 		Policy:      policy.NewEngine(policyCfg),
 		Audit:       codePipeline,
 		PacketAudit: packetPipeline,
-		Executor:    executor.NewMockExecutor(executor.Result{Success: true, Output: "result.json", ExitCode: 0}),
+		Executor:    exec,
 		Notary:      notary.NewMockNotary(true),
 	})
 
