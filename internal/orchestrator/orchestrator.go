@@ -17,40 +17,50 @@ import (
 
 // Config holds all dependencies for the orchestrator.
 type Config struct {
-	FSM        *fsm.Machine
-	Store      task.Store
-	Runner     *agent.Runner
-	Dispatcher *dispatch.Dispatcher
-	Policy     *policy.Engine
-	Audit      *audit.Pipeline
-	Executor   executor.Executor
-	Notary     notary.Notary
+	FSM         *fsm.Machine
+	Store       task.Store
+	Runner      *agent.Runner
+	Dispatcher  *dispatch.Dispatcher
+	Policy      *policy.Engine
+	Audit       *audit.Pipeline
+	PacketAudit *audit.Pipeline
+	Executor    executor.Executor
+	Notary      notary.Notary
 }
 
 // Orchestrator drives tasks through the FSM.
 type Orchestrator struct {
-	fsm        *fsm.Machine
-	store      task.Store
-	runner     *agent.Runner
-	dispatcher *dispatch.Dispatcher
-	policy     *policy.Engine
-	audit      *audit.Pipeline
-	executor   executor.Executor
-	notary     notary.Notary
+	fsm         *fsm.Machine
+	store       task.Store
+	runner      *agent.Runner
+	dispatcher  *dispatch.Dispatcher
+	policy      *policy.Engine
+	audit       *audit.Pipeline
+	packetAudit *audit.Pipeline
+	executor    executor.Executor
+	notary      notary.Notary
+	outputs     map[string]agent.AgentOutput // keyed by "taskID:role"
 }
 
 // NewOrchestrator creates an orchestrator with all dependencies.
 func NewOrchestrator(cfg Config) *Orchestrator {
 	return &Orchestrator{
-		fsm:        cfg.FSM,
-		store:      cfg.Store,
-		runner:     cfg.Runner,
-		dispatcher: cfg.Dispatcher,
-		policy:     cfg.Policy,
-		audit:      cfg.Audit,
-		executor:   cfg.Executor,
-		notary:     cfg.Notary,
+		fsm:         cfg.FSM,
+		store:       cfg.Store,
+		runner:      cfg.Runner,
+		dispatcher:  cfg.Dispatcher,
+		policy:      cfg.Policy,
+		audit:       cfg.Audit,
+		packetAudit: cfg.PacketAudit,
+		executor:    cfg.Executor,
+		notary:      cfg.Notary,
+		outputs:     make(map[string]agent.AgentOutput),
 	}
+}
+
+// outputKey returns the map key for storing agent outputs.
+func outputKey(taskID string, role agent.Role) string {
+	return taskID + ":" + string(role)
 }
 
 // Submit creates a new task and persists it.
@@ -109,14 +119,32 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		if err != nil {
 			return "", "", fmt.Errorf("routing failed: %w", err)
 		}
-		_, err = o.runner.Execute(ctx, tk, agent.RoleResearcher, "gather context", decision)
+		output, err := o.runner.Execute(ctx, tk, agent.RoleResearcher, "gather context", decision)
 		if err != nil {
 			return "", "", fmt.Errorf("researcher failed: %w", err)
 		}
+		o.outputs[outputKey(tk.ID, agent.RoleResearcher)] = output
 		return task.StatePacketValidation, "context packet produced", nil
 
 	case task.StatePacketValidation:
-		// In phase 1, validation is a pass-through. Real validation comes with Python tooling.
+		if o.packetAudit == nil {
+			return task.StateCoding, "packet validated (no pipeline)", nil
+		}
+		resOutput, ok := o.outputs[outputKey(tk.ID, agent.RoleResearcher)]
+		if !ok {
+			return task.StateHumanReview, "no researcher output to validate", nil
+		}
+		packet := resOutput.Parsed
+		if packet == nil {
+			packet = map[string]any{}
+		}
+		result, err := o.packetAudit.Run(ctx, audit.AuditInput{ContextPacket: packet})
+		if err != nil {
+			return task.StateHumanReview, "packet audit error", nil
+		}
+		if result.Verdict != audit.VerdictApprove {
+			return task.StateResearching, "packet rejected, re-research needed", nil
+		}
 		return task.StateCoding, "packet validated", nil
 
 	case task.StateCoding:
@@ -124,14 +152,26 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		if err != nil {
 			return "", "", fmt.Errorf("routing failed: %w", err)
 		}
-		_, err = o.runner.Execute(ctx, tk, agent.RoleCoder, "generate code", decision)
+		output, err := o.runner.Execute(ctx, tk, agent.RoleCoder, "generate code", decision)
 		if err != nil {
 			return "", "", fmt.Errorf("coder failed: %w", err)
 		}
+		o.outputs[outputKey(tk.ID, agent.RoleCoder)] = output
 		return task.StateAuditing, "code ready for audit", nil
 
 	case task.StateAuditing:
-		result, err := o.audit.Run(ctx, audit.AuditInput{Code: "placeholder"})
+		code := "placeholder"
+		if coderOutput, ok := o.outputs[outputKey(tk.ID, agent.RoleCoder)]; ok {
+			if codeVal, ok := coderOutput.Parsed["code"]; ok {
+				if s, ok := codeVal.(string); ok {
+					code = s
+				}
+			}
+			if code == "placeholder" {
+				code = coderOutput.Content
+			}
+		}
+		result, err := o.audit.Run(ctx, audit.AuditInput{Code: code})
 		if err != nil {
 			return task.StateHumanReview, "audit error", nil
 		}

@@ -60,15 +60,27 @@ func main() {
 		fmt.Printf("  %s → %s\n", from, to)
 	})
 
+	// Build audit pipelines
+	scriptDir := "python"
+	codePipeline := audit.NewPipeline(
+		audit.NewASTGate(scriptDir, policyCfg.AllowedDependencies),
+		audit.NewSecretsGate(scriptDir),
+	)
+	packetPipeline := audit.NewPipeline(
+		audit.NewSchemaValidationGate(scriptDir),
+		audit.NewContentScanGate(scriptDir),
+	)
+
 	orch := orchestrator.NewOrchestrator(orchestrator.Config{
-		FSM:        fsmMachine,
-		Store:      task.NewMemStore(),
-		Runner:     agent.NewRunner(agents, providerMap),
-		Dispatcher: dispatch.New(routingCfg),
-		Policy:     policy.NewEngine(policyCfg),
-		Audit:      audit.NewPipeline(), // deterministic gates wired in Phase 3
-		Executor:   executor.NewMockExecutor(executor.Result{Success: true, Output: "result.json", ExitCode: 0}),
-		Notary:     notary.NewMockNotary(true),
+		FSM:         fsmMachine,
+		Store:       task.NewMemStore(),
+		Runner:      agent.NewRunner(agents, providerMap),
+		Dispatcher:  dispatch.New(routingCfg),
+		Policy:      policy.NewEngine(policyCfg),
+		Audit:       codePipeline,
+		PacketAudit: packetPipeline,
+		Executor:    executor.NewMockExecutor(executor.Result{Success: true, Output: "result.json", ExitCode: 0}),
+		Notary:      notary.NewMockNotary(true),
 	})
 
 	// Submit and run
