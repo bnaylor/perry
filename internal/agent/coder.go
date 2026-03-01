@@ -14,6 +14,7 @@ Given a Context Packet, produce a JSON object with these fields:
 
 Rules:
 - Generate complete, runnable code — no placeholders or TODOs
+- Use the codebase_context field in the Context Packet as the "Source of Truth" for existing types, functions, and interfaces. Align your implementation with these existing patterns.
 - Only use dependencies listed in the Context Packet's constraints.allowed_dependencies
 - Follow the language and version specified in constraints
 - Include error handling for external API calls

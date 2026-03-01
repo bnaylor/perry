@@ -2,11 +2,13 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
 	"github.com/bnaylor/perry/internal/agent"
 	"github.com/bnaylor/perry/internal/audit"
+	"github.com/bnaylor/perry/internal/codebase"
 	"github.com/bnaylor/perry/internal/dispatch"
 	"github.com/bnaylor/perry/internal/executor"
 	"github.com/bnaylor/perry/internal/fsm"
@@ -130,7 +132,36 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		if err != nil {
 			return "", "", fmt.Errorf("routing failed: %w", err)
 		}
-		output, err := o.runner.Execute(ctx, tk, agent.RoleResearcher, "gather context", decision)
+
+		// Check for Working Set from Strategist
+		var workingSet []string
+		if stratOutput, ok := o.outputs[outputKey(tk.ID, agent.RoleStrategist)]; ok {
+			if wsVal, ok := stratOutput.Parsed["working_set"]; ok {
+				if wsSlice, ok := wsVal.([]any); ok {
+					for _, v := range wsSlice {
+						if s, ok := v.(string); ok {
+							workingSet = append(workingSet, s)
+						}
+					}
+				}
+			}
+		}
+
+		// If working set is identified, take a codebase snapshot
+		researchInput := "gather context"
+		if len(workingSet) > 0 {
+			snapshot, err := codebase.TakeSnapshot(workingSet)
+			if err != nil {
+				slog.Warn("codebase snapshot failed", "error", err)
+			} else {
+				// Inject snapshot metadata into Researcher input as JSON
+				if snapBytes, err := json.Marshal(snapshot); err == nil {
+					researchInput = fmt.Sprintf("gather context. codebase snapshot: %s", string(snapBytes))
+				}
+			}
+		}
+
+		output, err := o.runner.Execute(ctx, tk, agent.RoleResearcher, researchInput, decision)
 		if err != nil {
 			return "", "", fmt.Errorf("researcher failed: %w", err)
 		}

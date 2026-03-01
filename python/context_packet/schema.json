@@ -434,6 +434,37 @@
           "description": "APIs or patterns that are deprecated or end-of-life."
         }
       }
+    },
+
+    "codebase_context": {
+      "type": "object",
+      "description": "Semantic snapshot of relevant codebase parts (types, functions, interfaces). Produced by the CodebaseSnapshotGate.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["types", "functions", "interfaces", "imports"],
+        "additionalProperties": false,
+        "properties": {
+          "types": {
+            "type": "object",
+            "description": "Map of type names to their structural definitions."
+          },
+          "functions": {
+            "type": "array",
+            "items": { "type": "object" },
+            "description": "List of exported function signatures."
+          },
+          "interfaces": {
+            "type": "array",
+            "items": { "type": "object" },
+            "description": "List of exported interface definitions."
+          },
+          "imports": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of package imports."
+          }
+        }
+      }
     }
   }
 }
