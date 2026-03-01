@@ -53,15 +53,20 @@ Failure paths go to `HUMAN_REVIEW` (recoverable) or `FAILED` (terminal). The FSM
 
 ## The "Airlock" Model for Output
 
-The Executor writes to an ephemeral `/out` directory. The Notary (non-agent service) validates the output against the PM's manifest (expected file types, checksums), scans it, and only then copies it to the host's `~/agent_outputs/` directory. The container is destroyed immediately after. No persistent mounts between containers and the host filesystem — this prevents latent payload, symlink, and permission escalation attacks.
+The Executor writes to `/out`, which is bind-mounted from a host temp directory. This allows output files to persist after the container exits (tmpfs data is lost with the mount namespace). The Notary (non-agent service) validates the output against the PM's manifest (expected file types, checksums), scans it, and only then copies it to the host's `~/agent_outputs/` directory. The container is destroyed immediately after. Security is maintained via network isolation, all capabilities dropped, non-root user, resource limits, and tmpfs for all other writable directories.
 
 ## Phasing
 
 **Phase 1 (complete): Orchestration skeleton.** Working FSM, Dispatcher, Policy Engine, LLM provider interface, audit pipeline coordination, mock agents. A task flows through every state with deterministic enforcement. Python audit tooling (AST, secrets, context packet validation) is real. 58 tests, 48 files, 2514 lines of Go + Python.
 
-**Phase 2 (current): Real LLM agents.** Three provider implementations (Anthropic, Gemini, Ollama) behind the existing `llm.Provider` interface. Real agent system prompts with structured JSON output. Provider map for Dispatcher-driven routing. YAML config loading. CLI that accepts a task description. Agents produce real output flowing through the full state machine.
+**Phase 2 (complete): Real LLM agents.** Three provider implementations (Anthropic, Gemini, Ollama) behind the existing `llm.Provider` interface. Real agent system prompts with structured JSON output. Provider map for Dispatcher-driven routing. YAML config loading. CLI that accepts a task description. Agents produce real output flowing through the full state machine.
 
-**Phase 3: Sandbox, audit wiring, and codebase awareness.** Python audit subprocess integration, container runtime (Docker/Podman), Notary file scanning, layered filesystem ("Mirror Cage") for workspace-aware code generation, patch-based auditing.
+**Phase 3a (complete): Audit subprocess wiring.** `SubprocessGate` runner with fail-closed semantics, 4 gate factories (AST, secrets, schema validation, content scan), orchestrator stores agent outputs and passes real data through audit pipelines. 7 files, 524 lines added.
+
+**Phase 3b (in progress): Sandbox, audit persistence, and codebase awareness.**
+- *Container runtime (complete):* `DockerExecutor` using Docker Go SDK v28. Ephemeral containers with network=none, all capabilities dropped, non-root (UID 1000), memory/PID/CPU limits, bind-mounted `/out` for output artifacts, `stdcopy` log demuxing. CLI wires Docker with mock fallback. Orchestrator passes real coder output to executor. 14 unit tests, 5 integration tests.
+- *Audit record persistence (next):* Durable storage for gate verdicts and audit trails.
+- *Codebase-aware orchestration (next):* Mirror Cage — read-only host mirror, writable overlay, Working Set in Context Packet, patch-based auditing.
 
 **Phase 4: Discord and observability.** Discord bot sidecar, Prometheus-style metrics, compute health monitoring, dashboard.
 

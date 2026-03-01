@@ -126,10 +126,31 @@ Matching the audit gate pattern — every error path returns an error, never a s
 ### Existing tests unchanged
 Orchestrator continues using `MockExecutor`. `DockerExecutor` wired at CLI level.
 
+## Implementation Deviations
+
+The following changes were discovered during integration testing and represent improvements over the original design:
+
+### ReadonlyRootfs removed
+`CopyToContainer` writes to the container's rootfs layer *before* the container starts (before tmpfs mounts are applied). With `ReadonlyRootfs: true`, this fails. Security is maintained via: no network, all capabilities dropped, non-root user, resource limits, and tmpfs mounts for writable directories.
+
+### /out uses bind mount, not tmpfs
+Tmpfs data is lost when the container process exits (mount namespace torn down). `/out` is now a host bind mount (`os.MkdirTemp` → bind into container) so output files persist and can be read directly. The `checkOutput` helper returns the path if files exist, or cleans up and returns empty string.
+
+### /workspace is not a tmpfs
+Same reason as `/out` — `CopyToContainer` injects code into `/workspace` before the container starts. A tmpfs mount applied at start would hide the injected files.
+
+### Docker log demuxing
+Docker's `ContainerLogs` API returns a multiplexed stream with 8-byte frame headers (stream type + payload length). Raw `io.ReadAll` returns garbled output. Added `stdcopy.StdCopy` from `github.com/docker/docker/pkg/stdcopy` to properly demux stdout/stderr. The mock client was updated to produce framed output matching real Docker behavior.
+
+### Default timeout
+Changed from 60s (design) to 30s (implementation) as a more conservative default for sandbox execution. Overridable via `RunRequest.TimeoutSec`.
+
 ## Dependencies
 
-- `github.com/docker/docker` (Go SDK)
+- `github.com/docker/docker` v28.5.2 (Go SDK)
 
 ## Wiring
 
-`DockerExecutor` is constructed in `cmd/perry/main.go` and passed to the orchestrator, replacing `MockExecutor`. The orchestrator doesn't know or care which implementation it gets — same interface.
+`DockerExecutor` is constructed in `cmd/perry/main.go` and passed to the orchestrator, replacing `MockExecutor`. Falls back to `MockExecutor` with a warning if Docker client creation fails. The orchestrator doesn't know or care which implementation it gets — same interface.
+
+The orchestrator's `StateExecuting` handler was also updated to extract `code`, `language`, and `dependencies` from the coder's stored output (previously passed `"placeholder"`).
