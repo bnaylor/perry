@@ -13,6 +13,7 @@ import (
 	"github.com/bnaylor/perry/internal/llm"
 	"github.com/bnaylor/perry/internal/notary"
 	"github.com/bnaylor/perry/internal/policy"
+	"github.com/bnaylor/perry/internal/storage"
 	"github.com/bnaylor/perry/internal/task"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +30,12 @@ func (g *passingGate) Run(_ context.Context, _ audit.AuditInput) audit.GateResul
 	return audit.GateResult{Pass: true, Gate: "mock"}
 }
 
-func testOrchestrator() *Orchestrator {
+func testOrchestrator(t *testing.T) *Orchestrator {
+	t.Helper()
+	store, err := storage.NewStore(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+
 	provider := llm.NewMockProvider("test-model", "mock response")
 	agents := map[agent.Role]agent.Agent{
 		agent.RoleStrategist: agent.NewMockAgent(agent.RoleStrategist),
@@ -40,7 +46,7 @@ func testOrchestrator() *Orchestrator {
 	}
 	return NewOrchestrator(Config{
 		FSM:   fsm.New(),
-		Store: task.NewMemStore(),
+		Store: store,
 		Runner: agent.NewRunner(agents, map[string]llm.Provider{
 			"mock": provider,
 		}),
@@ -62,7 +68,7 @@ func testOrchestrator() *Orchestrator {
 }
 
 func TestOrchestratorSubmitTask(t *testing.T) {
-	orch := testOrchestrator()
+	orch := testOrchestrator(t)
 	ctx := context.Background()
 
 	tk, err := orch.Submit(ctx, "Build a weather CLI", "user-1")
@@ -72,7 +78,7 @@ func TestOrchestratorSubmitTask(t *testing.T) {
 }
 
 func TestOrchestratorStepThroughHappyPath(t *testing.T) {
-	orch := testOrchestrator()
+	orch := testOrchestrator(t)
 	ctx := context.Background()
 
 	tk, err := orch.Submit(ctx, "Build a weather CLI", "user-1")
@@ -99,6 +105,10 @@ func TestOrchestratorStepThroughHappyPath(t *testing.T) {
 }
 
 func TestOrchestratorPacketAuditRejectsInvalidPacket(t *testing.T) {
+	store, err := storage.NewStore(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+
 	provider := llm.NewMockProvider("test-model", "mock response")
 	agents := map[agent.Role]agent.Agent{
 		agent.RoleStrategist: agent.NewMockAgent(agent.RoleStrategist),
@@ -110,7 +120,7 @@ func TestOrchestratorPacketAuditRejectsInvalidPacket(t *testing.T) {
 
 	orch := NewOrchestrator(Config{
 		FSM:   fsm.New(),
-		Store: task.NewMemStore(),
+		Store: store,
 		Runner: agent.NewRunner(agents, map[string]llm.Provider{
 			"mock": provider,
 		}),
@@ -154,7 +164,7 @@ func (g *rejectingGate) Run(_ context.Context, _ audit.AuditInput) audit.GateRes
 }
 
 func TestOrchestratorStepAtCompletedIsNoop(t *testing.T) {
-	orch := testOrchestrator()
+	orch := testOrchestrator(t)
 	ctx := context.Background()
 
 	tk, _ := orch.Submit(ctx, "test", "user-1")

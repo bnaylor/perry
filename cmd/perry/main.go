@@ -16,6 +16,7 @@ import (
 	"github.com/bnaylor/perry/internal/orchestrator"
 	"github.com/bnaylor/perry/internal/policy"
 	"github.com/bnaylor/perry/internal/providers"
+	"github.com/bnaylor/perry/internal/storage"
 	"github.com/bnaylor/perry/internal/task"
 	dkclient "github.com/docker/docker/client"
 )
@@ -82,9 +83,17 @@ func main() {
 		exec = executor.NewDockerExecutor(dockerClient, "python:3.12-slim", executor.DefaultSandboxLimits())
 	}
 
+	// Open storage (in-memory for now; Task 7 will wire a persistent path)
+	store, err := storage.NewStore(":memory:")
+	if err != nil {
+		slog.Error("failed to open storage", "error", err)
+		os.Exit(1)
+	}
+	defer store.Close()
+
 	orch := orchestrator.NewOrchestrator(orchestrator.Config{
 		FSM:         fsmMachine,
-		Store:       task.NewMemStore(),
+		Store:       store,
 		Runner:      agent.NewRunner(agents, providerMap),
 		Dispatcher:  dispatch.New(routingCfg),
 		Policy:      policy.NewEngine(policyCfg),

@@ -12,13 +12,14 @@ import (
 	"github.com/bnaylor/perry/internal/fsm"
 	"github.com/bnaylor/perry/internal/notary"
 	"github.com/bnaylor/perry/internal/policy"
+	"github.com/bnaylor/perry/internal/storage"
 	"github.com/bnaylor/perry/internal/task"
 )
 
 // Config holds all dependencies for the orchestrator.
 type Config struct {
 	FSM         *fsm.Machine
-	Store       task.Store
+	Store       *storage.Store
 	Runner      *agent.Runner
 	Dispatcher  *dispatch.Dispatcher
 	Policy      *policy.Engine
@@ -31,7 +32,7 @@ type Config struct {
 // Orchestrator drives tasks through the FSM.
 type Orchestrator struct {
 	fsm         *fsm.Machine
-	store       task.Store
+	store       *storage.Store
 	runner      *agent.Runner
 	dispatcher  *dispatch.Dispatcher
 	policy      *policy.Engine
@@ -83,8 +84,14 @@ func (o *Orchestrator) Step(ctx context.Context, tk *task.Task) error {
 		return nil // terminal state, nothing to do
 	}
 
+	prev := tk.State // capture before transition
 	if err := o.fsm.Transition(ctx, tk, next, reason); err != nil {
 		return fmt.Errorf("transition failed: %w", err)
+	}
+
+	// Record transition (log and swallow errors)
+	if recErr := o.store.RecordTransition(tk.ID, string(prev), string(next), reason); recErr != nil {
+		slog.Warn("failed to record transition", "error", recErr)
 	}
 
 	slog.Info("state transition", "task", tk.ID, "to", next, "reason", reason)
@@ -108,9 +115,13 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		if err != nil {
 			return task.StateHumanReview, "routing error", nil
 		}
-		_, err = o.runner.Execute(ctx, tk, agent.RoleStrategist, tk.Description, decision)
+		output, err := o.runner.Execute(ctx, tk, agent.RoleStrategist, tk.Description, decision)
 		if err != nil {
 			return task.StateHumanReview, "strategist error", nil
+		}
+		o.outputs[outputKey(tk.ID, agent.RoleStrategist)] = output
+		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleStrategist), "", "", output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
+			slog.Warn("failed to record agent call", "error", recErr)
 		}
 		return task.StateResearching, "requirements ready", nil
 
@@ -124,6 +135,9 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			return "", "", fmt.Errorf("researcher failed: %w", err)
 		}
 		o.outputs[outputKey(tk.ID, agent.RoleResearcher)] = output
+		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleResearcher), "", "", output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
+			slog.Warn("failed to record agent call", "error", recErr)
+		}
 		return task.StatePacketValidation, "context packet produced", nil
 
 	case task.StatePacketValidation:
@@ -142,6 +156,11 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		if err != nil {
 			return task.StateHumanReview, "packet audit error", nil
 		}
+		for _, gr := range result.GateResults {
+			if recErr := o.store.RecordAuditGate(tk.ID, "packet", gr.Gate, gr.Pass, gr.Findings); recErr != nil {
+				slog.Warn("failed to record audit gate", "error", recErr)
+			}
+		}
 		if result.Verdict != audit.VerdictApprove {
 			return task.StateResearching, "packet rejected, re-research needed", nil
 		}
@@ -157,6 +176,9 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			return "", "", fmt.Errorf("coder failed: %w", err)
 		}
 		o.outputs[outputKey(tk.ID, agent.RoleCoder)] = output
+		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleCoder), "", "", output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
+			slog.Warn("failed to record agent call", "error", recErr)
+		}
 		return task.StateAuditing, "code ready for audit", nil
 
 	case task.StateAuditing:
@@ -174,6 +196,11 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		result, err := o.audit.Run(ctx, audit.AuditInput{Code: code})
 		if err != nil {
 			return task.StateHumanReview, "audit error", nil
+		}
+		for _, gr := range result.GateResults {
+			if recErr := o.store.RecordAuditGate(tk.ID, "code", gr.Gate, gr.Pass, gr.Findings); recErr != nil {
+				slog.Warn("failed to record audit gate", "error", recErr)
+			}
 		}
 		switch result.Verdict {
 		case audit.VerdictApprove:
@@ -208,6 +235,9 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			return task.StateHumanReview, "shadow auditor failed", nil
 		}
 		o.outputs[outputKey(tk.ID, agent.RoleShadowAuditor)] = output
+		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleShadowAuditor), "", "", output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
+			slog.Warn("failed to record agent call", "error", recErr)
+		}
 
 		// Evaluate report
 		foundVal, ok := output.Parsed["vulnerability_found"]
@@ -246,6 +276,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		if result.Success { // Exit code 0 means PoC worked
 		}
 		return task.StateExecuting, "shadow auditor exploit failed (false positive)", nil
+
 	case task.StateExecuting:
 		// Retrieve coder output for execution
 		code := ""
@@ -284,6 +315,21 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		if err != nil {
 			return task.StateFailed, "executor error", nil
 		}
+
+		// Move artifacts and record execution
+		artifactPath := ""
+		if result.Output != "" {
+			managedPath, moveErr := o.store.MoveArtifacts(tk.ID, result.Output)
+			if moveErr != nil {
+				slog.Warn("failed to move artifacts", "error", moveErr)
+			} else {
+				artifactPath = managedPath
+			}
+		}
+		if recErr := o.store.RecordExecution(tk.ID, result.ExitCode, result.Logs, artifactPath); recErr != nil {
+			slog.Warn("failed to record execution", "error", recErr)
+		}
+
 		if !result.Success {
 			return task.StateCoding, "execution failed, retry", nil
 		}
