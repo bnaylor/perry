@@ -1,4 +1,6 @@
 # Tech Debt & Future Improvements
+Last Update: 2026-03-01 09:17
+Last Review: never
 
 Items discovered during development that aren't blocking but should be addressed later.
 
