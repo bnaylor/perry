@@ -35,31 +35,31 @@ type Config struct {
 
 // Orchestrator drives tasks through the FSM.
 type Orchestrator struct {
-	fsm         *fsm.Machine
-	store       *storage.Store
-	runner      *agent.Runner
-	dispatcher  *dispatch.Dispatcher
-	policy      *policy.Engine
-	audit       *audit.Pipeline
-	packetAudit *audit.Pipeline
-	executor    executor.Executor
-	notary      notary.Notary
-	outputs      map[string]agent.AgentOutput // keyed by "taskID:role"
+	fsm           *fsm.Machine
+	store         *storage.Store
+	runner        *agent.Runner
+	dispatcher    *dispatch.Dispatcher
+	policy        *policy.Engine
+	audit         *audit.Pipeline
+	packetAudit   *audit.Pipeline
+	executor      executor.Executor
+	notary        notary.Notary
+	outputs       map[string]agent.AgentOutput // keyed by "taskID:role"
 	artifactPaths map[string]string            // keyed by taskID
 }
 
 // NewOrchestrator creates an orchestrator with all dependencies.
 func NewOrchestrator(cfg Config) *Orchestrator {
 	return &Orchestrator{
-		fsm:         cfg.FSM,
-		store:       cfg.Store,
-		runner:      cfg.Runner,
-		dispatcher:  cfg.Dispatcher,
-		policy:      cfg.Policy,
-		audit:       cfg.Audit,
-		packetAudit: cfg.PacketAudit,
-		executor:    cfg.Executor,
-		notary:      cfg.Notary,
+		fsm:           cfg.FSM,
+		store:         cfg.Store,
+		runner:        cfg.Runner,
+		dispatcher:    cfg.Dispatcher,
+		policy:        cfg.Policy,
+		audit:         cfg.Audit,
+		packetAudit:   cfg.PacketAudit,
+		executor:      cfg.Executor,
+		notary:        cfg.Notary,
 		outputs:       make(map[string]agent.AgentOutput),
 		artifactPaths: make(map[string]string),
 	}
@@ -106,6 +106,54 @@ func (o *Orchestrator) Step(ctx context.Context, tk *task.Task) error {
 		return fmt.Errorf("failed to persist state: %w", err)
 	}
 
+	return nil
+}
+
+// HandleCommands checks for and processes inbound instructions from the bus.
+func (o *Orchestrator) HandleCommands(ctx context.Context) error {
+	cmds, err := o.store.GetPendingCommands(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, cmd := range cmds {
+		slog.Info("processing command", "id", cmd.ID, "command", cmd.Command)
+		if err := o.store.UpdateCommandStatus(ctx, cmd.ID, "processing"); err != nil {
+			slog.Warn("failed to update command status", "id", cmd.ID, "error", err)
+			continue
+		}
+
+		// Process command logic
+		status := "completed"
+		if err := o.executeCommand(ctx, cmd); err != nil {
+			slog.Error("failed to execute command", "id", cmd.ID, "error", err)
+			status = "failed"
+		}
+
+		if err := o.store.UpdateCommandStatus(ctx, cmd.ID, status); err != nil {
+			slog.Warn("failed to finalize command status", "id", cmd.ID, "error", err)
+		}
+	}
+
+	return nil
+}
+
+func (o *Orchestrator) executeCommand(ctx context.Context, cmd storage.Command) error {
+	// Simple command parsing: "!command [taskID]"
+	// In Phase 4, we mainly care about !approve for HUMAN_REVIEW states.
+	if cmd.Command == "!approve" && cmd.TaskID != "" {
+		tk, err := o.store.Get(ctx, cmd.TaskID)
+		if err != nil {
+			return err
+		}
+		if tk.State == task.StateHumanReview {
+			// Advance the state machine manually
+			// For now, we'll just log it. Real advancement requires knowing 
+			// which state we're resuming to. 
+			// TODO: Add resumption logic to FSM/Orchestrator.
+			slog.Info("manual approval received via discord", "task", tk.ID)
+		}
+	}
 	return nil
 }
 
