@@ -2,12 +2,11 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/bnaylor/perry/internal/agent"
 	"github.com/bnaylor/perry/internal/audit"
@@ -156,24 +155,8 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			snapshot, err := codebase.TakeSnapshot(workingSet)
 			if err != nil {
 				slog.Warn("codebase snapshot failed", "error", err)
-			} else {
-				// Also read actual file contents for the working set
-				fileContents := make(map[string]string)
-				for _, pkg := range workingSet {
-					files, _ := os.ReadDir(pkg)
-					for _, f := range files {
-						if !f.IsDir() && filepath.Ext(f.Name()) == ".go" && !strings.HasSuffix(f.Name(), "_test.go") {
-							path := filepath.Join(pkg, f.Name())
-							content, _ := os.ReadFile(path)
-							fileContents[path] = string(content)
-						}
-					}
-				}
-
-				// Inject snapshot metadata into Researcher input as JSON
-				if snapBytes, err := json.Marshal(snapshot); err == nil {
-					researchInput = fmt.Sprintf("gather context. TARGET LANGUAGE IS 'go'. codebase snapshot: %s", string(snapBytes))
-				}
+			} else if snapBytes, err := json.Marshal(snapshot); err == nil {
+				researchInput = fmt.Sprintf("gather context. TARGET LANGUAGE IS 'go'. codebase snapshot: %s", string(snapBytes))
 			}
 		}
 
@@ -203,8 +186,9 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		// Fix packet_id if it's invalid (common local LLM failure)
 		if meta, ok := packet["packet_meta"].(map[string]any); ok {
 			dateStr := tk.CreatedAt.Format("20060102")
-			// Use a deterministic hex hash of the task ID to ensure it matches ^[a-f0-9]{8}$
-			meta["packet_id"] = fmt.Sprintf("CP-%s-abcdef12", dateStr)
+			hash := sha256.Sum256([]byte(tk.ID))
+			shortHash := hex.EncodeToString(hash[:4]) // 8 hex chars
+			meta["packet_id"] = fmt.Sprintf("CP-%s-%s", dateStr, shortHash)
 		}
 
 		// Ensure language is 'go' for Perry core changes
@@ -252,7 +236,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 
 	case task.StateAuditing:
 		code := "placeholder"
-		language := "python" // default
+		language := "go"
 		if coderOutput, ok := o.outputs[outputKey(tk.ID, agent.RoleCoder)]; ok {
 			if codeVal, ok := coderOutput.Parsed["code"]; ok {
 				if s, ok := codeVal.(string); ok {

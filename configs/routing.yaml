@@ -14,25 +14,25 @@ providers:
 
 defaults:
   strategist:
-    tier: local
-    provider: local-cuda
-    model: "qwen3:14b"
+    tier: cloud
+    provider: cloud-anthropic
+    model: "claude-3-5-sonnet-latest"
   researcher:
-    tier: local
-    provider: local-cuda
-    model: "qwen2.5-coder:14b"
+    tier: cloud
+    provider: cloud-gemini
+    model: "gemini-2.0-flash-exp"
   coder:
     tier: local
     provider: local-cuda
-    model: "qwen2.5-coder:14b"
+    model: "qwen3:14b"
   auditor_semantic:
     tier: local
-    provider: local-cuda
-    model: "qwen2.5-coder:14b"
+    provider: local-npu
+    model: "deepseek-r1:14b"
   auditor_shadow:
     tier: local
-    provider: local-cuda
-    model: "qwen2.5-coder:14b"
+    provider: local-npu
+    model: "deepseek-r1:14b"
 
 escalation:
   max_local_attempts: 2

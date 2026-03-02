@@ -9,3 +9,6 @@ __pycache__/
 .venv/
 .DS_Store
 .discord-coordination.json
+perry
+perry_debug.log
+tmp/
