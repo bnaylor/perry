@@ -14,15 +14,14 @@ We use a **Dual-Node Local Cluster** to distribute the workload between code gen
   - `qwen2.5-coder:14b` (Semantic Auditor)
 - **Rationale:** High CUDA throughput for rapid code generation and initial semantic analysis.
 
-### Node 2: The "Brain" ("mink", Linux box)
+### Node 2: The "Brain" ("mink", Khadas Mind 2)
 - **IP:** `10.3.2.48`
-- **Specs:** Ryzen 7, 64GB RAM, RTX 4060 Ti (16GB VRAM)
+- **Specs:** Intel Core Ultra 7 (Meteor Lake), 64GB RAM, RTX 4060 Module (16GB VRAM)
 - **Primary Role:** **The Shadow Auditor (Adversarial)**
 - **Model:** `deepseek-r1:14b`
 - **Special Ops:** 
     - **Service Config:** Ollama is configured to listen on `0.0.0.0` (via `/etc/systemd/system/ollama.service.d/override.conf`) to allow cluster-wide access.
-
-## Cluster Role Distribution (The Roundtable)
+    - **Meteor Lake Extras:** Planned usage of the **Arc iGPU** (via OpenVINO) for safety filtering and the **NPU** for embedding generation (see `docs/tech-debt.md` regarding Plucky Puffin driver stability).
 By using two nodes, we run the "Parallel Roundtable" without VRAM contention on a single card.
 
 | Role | Provider | Node | Model |
