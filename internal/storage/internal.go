@@ -88,3 +88,68 @@ func (s *Store) UpdateCommandStatus(ctx context.Context, id int64, status string
 	}
 	return nil
 }
+
+// TransitionRecord matches the database 'transitions' table.
+type TransitionRecord struct {
+	ID        int64
+	TaskID    string
+	FromState string
+	ToState   string
+	Reason    string
+	CreatedAt time.Time
+}
+
+// GetTransitionsSince returns all transitions with an ID greater than the given cursor.
+func (s *Store) GetTransitionsSince(ctx context.Context, cursor int64) ([]TransitionRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT id, task_id, from_state, to_state, reason, created_at FROM transitions WHERE id > ? ORDER BY id",
+		cursor)
+	if err != nil {
+		return nil, fmt.Errorf("get transitions since %d: %w", cursor, err)
+	}
+	defer rows.Close()
+
+	var records []TransitionRecord
+	for rows.Next() {
+		var r TransitionRecord
+		if err := rows.Scan(&r.ID, &r.TaskID, &r.FromState, &r.ToState, &r.Reason, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan transition: %w", err)
+		}
+		records = append(records, r)
+	}
+	return records, rows.Err()
+}
+
+// AgentCallRecord matches the database 'agent_calls' table.
+type AgentCallRecord struct {
+	ID           int64
+	TaskID       string
+	Role         string
+	Provider     string
+	Model        string
+	InputTokens  int
+	OutputTokens int
+	Content      string
+	CreatedAt    time.Time
+}
+
+// GetAgentCallsSince returns all agent calls with an ID greater than the given cursor.
+func (s *Store) GetAgentCallsSince(ctx context.Context, cursor int64) ([]AgentCallRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT id, task_id, role, provider, model, input_tokens, output_tokens, content, created_at FROM agent_calls WHERE id > ? ORDER BY id",
+		cursor)
+	if err != nil {
+		return nil, fmt.Errorf("get agent calls since %d: %w", cursor, err)
+	}
+	defer rows.Close()
+
+	var records []AgentCallRecord
+	for rows.Next() {
+		var r AgentCallRecord
+		if err := rows.Scan(&r.ID, &r.TaskID, &r.Role, &r.Provider, &r.Model, &r.InputTokens, &r.OutputTokens, &r.Content, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan agent call: %w", err)
+		}
+		records = append(records, r)
+	}
+	return records, rows.Err()
+}
