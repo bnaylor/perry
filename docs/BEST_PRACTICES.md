@@ -18,6 +18,5 @@
 - **Distributed Node Readiness:** When adding or troubleshooting local LLM nodes (e.g., Node 2/mink), verify the service is listening on `0.0.0.0` (not just `127.0.0.1`) and check connectivity from the host.
 - **Model Availability Discovery:** If a provider returns a 404 for a model, use a model-listing utility to verify the exact names and capabilities supported by the current API version.
 - **Configuration Integrity:** For small YAML files (like `configs/routing.yaml`), prefer `write_file` over `edit_file` to avoid accidental key duplications during complex updates.
-
-### Observability
+- **Model Availability Discovery:** If a provider returns a 404 for a model, use the `perry --models` flag to verify the exact names and capabilities supported by the current API version for all configured providers.
 - **Error Logging:** Ensure that all `runner.Execute` calls in `internal/orchestrator` log their errors *before* transitioning to a failure or review state. This is critical for diagnosing failures that are otherwise swallowed by the FSM.
