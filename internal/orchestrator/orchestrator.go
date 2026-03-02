@@ -121,10 +121,11 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		}
 		output, err := o.runner.Execute(ctx, tk, agent.RoleStrategist, tk.Description, decision)
 		if err != nil {
+			slog.Error("strategist failed", "error", err)
 			return task.StateHumanReview, "strategist error", nil
 		}
 		o.outputs[outputKey(tk.ID, agent.RoleStrategist)] = output
-		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleStrategist), "", "", output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
+		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleStrategist), decision.Provider, decision.Model, output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
 			slog.Warn("failed to record agent call", "error", recErr)
 		}
 		return task.StateResearching, "requirements ready", nil
@@ -165,7 +166,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			return "", "", fmt.Errorf("researcher failed: %w", err)
 		}
 		o.outputs[outputKey(tk.ID, agent.RoleResearcher)] = output
-		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleResearcher), "", "", output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
+		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleResearcher), decision.Provider, decision.Model, output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
 			slog.Warn("failed to record agent call", "error", recErr)
 		}
 		return task.StatePacketValidation, "context packet produced", nil
@@ -229,7 +230,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			return "", "", fmt.Errorf("coder failed: %w", err)
 		}
 		o.outputs[outputKey(tk.ID, agent.RoleCoder)] = output
-		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleCoder), "", "", output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
+		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleCoder), decision.Provider, decision.Model, output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
 			slog.Warn("failed to record agent call", "error", recErr)
 		}
 		return task.StateAuditing, "code ready for audit", nil
@@ -297,7 +298,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			return task.StateHumanReview, "shadow auditor failed", nil
 		}
 		o.outputs[outputKey(tk.ID, agent.RoleShadowAuditor)] = output
-		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleShadowAuditor), "", "", output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
+		if recErr := o.store.RecordAgentCall(tk.ID, string(agent.RoleShadowAuditor), decision.Provider, decision.Model, output.Usage.InputTokens, output.Usage.OutputTokens, output.Content); recErr != nil {
 			slog.Warn("failed to record agent call", "error", recErr)
 		}
 

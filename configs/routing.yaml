@@ -15,20 +15,20 @@ providers:
 defaults:
   strategist:
     tier: cloud
-    provider: cloud-anthropic
-    model: "claude-3-5-sonnet-latest"
+    provider: cloud-gemini
+    model: "gemini-3-flash-preview"
   researcher:
     tier: cloud
     provider: cloud-gemini
-    model: "gemini-2.0-flash-exp"
+    model: "gemini-3-flash-preview"
   coder:
     tier: local
     provider: local-cuda
     model: "qwen3:14b"
   auditor_semantic:
     tier: local
-    provider: local-npu
-    model: "deepseek-r1:14b"
+    provider: local-cuda
+    model: "qwen2.5-coder:14b"
   auditor_shadow:
     tier: local
     provider: local-npu
@@ -38,5 +38,5 @@ escalation:
   max_local_attempts: 2
   promote_to:
     tier: cloud
-    provider: cloud-anthropic
-    model: "claude-3-5-sonnet-latest"
+    provider: cloud-gemini
+    model: "gemini-3.1-pro-preview"

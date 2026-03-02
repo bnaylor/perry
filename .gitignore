@@ -12,3 +12,4 @@ __pycache__/
 perry
 perry_debug.log
 tmp/
+api_keys
