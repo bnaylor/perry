@@ -4,10 +4,9 @@
 
 Perry is a Go-based AI agent orchestration platform. See `docs/VISION.md` for full architecture.
 
+Perry is a Go-based AI agent orchestration platform. See `docs/VISION.md` for full architecture and `docs/BEST_PRACTICES.md` for agent workflows.
+
 - **Language:** Go core, Python tooling scripts
-- **Build/Test:** `go build ./...` and `go test ./...`
-- **Integration tests:** `go test -tags integration ./...` (require external services)
-- **Config:** `configs/routing.yaml` and `configs/policy.yaml`
 
 ## Discord Collaboration
 
