@@ -80,13 +80,12 @@ func (s *Store) Get(ctx context.Context, id string) (*task.Task, error) {
 }
 
 // Update writes the task's current state back to the database.
-// Returns an error if no row was affected (task does not exist).
+// It specifically avoids overwriting discord_thread_id to prevent races with the relay.
 func (s *Store) Update(ctx context.Context, t *task.Task) error {
 	result, err := s.db.ExecContext(ctx,
-		`UPDATE tasks SET state = ?, updated_at = ?, discord_thread_id = ? WHERE id = ?`,
+		`UPDATE tasks SET state = ?, updated_at = ? WHERE id = ?`,
 		string(t.State),
 		time.Now(),
-		t.DiscordThreadID,
 		t.ID,
 	)
 	if err != nil {
@@ -98,6 +97,20 @@ func (s *Store) Update(ctx context.Context, t *task.Task) error {
 	}
 	if n == 0 {
 		return fmt.Errorf("task %s not found", t.ID)
+	}
+	return nil
+}
+
+// SetTaskThreadID updates only the discord_thread_id for a task.
+func (s *Store) SetTaskThreadID(ctx context.Context, id, threadID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE tasks SET discord_thread_id = ?, updated_at = ? WHERE id = ?`,
+		threadID,
+		time.Now(),
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("set task %s thread id: %w", id, err)
 	}
 	return nil
 }

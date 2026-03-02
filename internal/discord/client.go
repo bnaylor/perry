@@ -3,21 +3,25 @@ package discord
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
+	"time"
 
 	"github.com/bnaylor/perry/internal/agent"
 	"github.com/bwmarrin/discordgo"
 )
 
-// Persona represents a themed bot identity.
-type Persona struct {
-	Name  string
-	Vibe  string
-	Token string
+// Sender defines the interface for sending messages and managing threads.
+type Sender interface {
+	Start() error
+	Close()
+	CreateThread(role agent.Role, channelID, name string) (string, error)
+	SendMessage(role agent.Role, channelID, content string) error
+	RegisterHandler(role agent.Role, handler any) error
 }
 
-// Map roles to Phineas & Ferb personas.
-var defaultPersonas = map[agent.Role]string{
+// DefaultPersonas maps roles to Phineas & Ferb personas.
+var DefaultPersonas = map[agent.Role]string{
 	agent.RoleStrategist:    "Major Monogram",
 	agent.RoleResearcher:    "Phineas",
 	agent.RoleCoder:         "Ferb",
@@ -25,14 +29,13 @@ var defaultPersonas = map[agent.Role]string{
 	agent.RoleShadowAuditor: "Doof",
 }
 
-// Client manages multiple Discord bot sessions for the roundtable cast.
+// Client manages multiple Discord bot sessions.
 type Client struct {
 	sessions map[agent.Role]*discordgo.Session
 	tokens   map[agent.Role]string
 	mu       sync.RWMutex
 }
 
-// NewClient creates a new multi-bot Discord client.
 func NewClient(tokens map[agent.Role]string) *Client {
 	return &Client{
 		sessions: make(map[agent.Role]*discordgo.Session),
@@ -40,7 +43,6 @@ func NewClient(tokens map[agent.Role]string) *Client {
 	}
 }
 
-// Start initializes connections for all configured bots.
 func (c *Client) Start() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -50,61 +52,57 @@ func (c *Client) Start() error {
 		if err != nil {
 			return fmt.Errorf("failed to create session for %s: %w", role, err)
 		}
-
 		if err := dg.Open(); err != nil {
 			return fmt.Errorf("failed to open session for %s: %w", role, err)
 		}
-
 		c.sessions[role] = dg
-		slog.Info("discord session opened", "role", role, "persona", defaultPersonas[role])
 	}
-
 	return nil
 }
 
-// Close gracefully shuts down all active sessions.
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	for role, dg := range c.sessions {
-		slog.Info("closing discord session", "role", role)
+	for _, dg := range c.sessions {
 		dg.Close()
 	}
 }
 
-// CreateThread creates a new thread in the given channel.
 func (c *Client) CreateThread(role agent.Role, channelID, name string) (string, error) {
 	session, ok := c.getSession(role)
 	if !ok {
 		return "", fmt.Errorf("no active session for role: %s", role)
 	}
-
-	// Create thread (StartThread was added in newer discordgo versions)
 	thread, err := session.ThreadStart(channelID, name, discordgo.ChannelTypeGuildPublicThread, 60)
 	if err != nil {
-		return "", fmt.Errorf("failed to create thread: %w", err)
+		return "", err
 	}
-
 	return thread.ID, nil
 }
 
-// SendMessage posts a message to a channel or thread as the given agent role.
 func (c *Client) SendMessage(role agent.Role, channelID, content string) error {
 	session, ok := c.getSession(role)
 	if !ok {
 		return fmt.Errorf("no active session for role: %s", role)
 	}
-
 	_, err := session.ChannelMessageSend(channelID, content)
 	return err
+}
+
+func (c *Client) RegisterHandler(role agent.Role, handler any) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	session, ok := c.sessions[role]
+	if !ok {
+		return fmt.Errorf("no active session for role: %s", role)
+	}
+	session.AddHandler(handler)
+	return nil
 }
 
 func (c *Client) getSession(role agent.Role) (*discordgo.Session, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
-	// Fallback to Strategist if specific role session isn't available
 	s, ok := c.sessions[role]
 	if !ok {
 		s, ok = c.sessions[agent.RoleStrategist]
@@ -112,12 +110,44 @@ func (c *Client) getSession(role agent.Role) (*discordgo.Session, bool) {
 	return s, ok
 }
 
-// AddHandler registers a message handler for all active sessions.
-func (c *Client) AddHandler(handler any) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// MockClient logs messages to a file instead of sending to Discord.
+type MockClient struct {
+	LogPath string
+	file    *os.File
+}
 
-	for _, dg := range c.sessions {
-		dg.AddHandler(handler)
+func (m *MockClient) Start() error {
+	f, err := os.OpenFile(m.LogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
 	}
+	m.file = f
+	fmt.Fprintf(m.file, "\n--- Mock Session Started at %s ---\n", time.Now().Format(time.RFC3339))
+	return nil
+}
+
+func (m *MockClient) Close() {
+	if m.file != nil {
+		m.file.Close()
+	}
+}
+
+func (m *MockClient) CreateThread(role agent.Role, channelID, name string) (string, error) {
+	id := fmt.Sprintf("mock-thread-%d", time.Now().UnixNano())
+	if m.file != nil {
+		fmt.Fprintf(m.file, "[%s] CREATE THREAD in %s: %s (ID: %s)\n", role, channelID, name, id)
+	}
+	return id, nil
+}
+
+func (m *MockClient) SendMessage(role agent.Role, channelID, content string) error {
+	if m.file != nil {
+		fmt.Fprintf(m.file, "[%s] SEND TO %s: %s\n", role, channelID, content)
+	}
+	return nil
+}
+
+func (m *MockClient) RegisterHandler(role agent.Role, handler any) error {
+	slog.Info("mock registering handler", "role", role)
+	return nil
 }

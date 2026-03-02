@@ -15,36 +15,24 @@ type EventData struct {
 	FromState   string
 	ToState     string
 	Reason      string
-	AgentName   string
+	Persona     string
 	Role        string
 	Content     string
 	Findings    string
 }
 
 var templates = map[string]string{
-	"transition": `**State Transition: {{.FromState}} ➔ {{.ToState}}**
-> {{.Reason}}`,
+	"transition": "**State Transition: {{.FromState}} ➔ {{.ToState}}**\n> {{.Reason}}",
 
-	"task_submitted": `📢 **New Mission Briefing**
-**ID:** ` + "`" + `{{.TaskID}}` + "`" + `
-**Task:** {{.Description}}
-*Phineas and Ferb, I know what we're going to do today!*`,
+	"task_submitted": "📢 **New Mission Briefing**\n**ID:** `{{.TaskID}}`\n**Task:** {{.Description}}\n*Phineas and Ferb, I know what we're going to do today!*",
 
-	"agent_call": `**{{.AgentName}}** ({{.Role}}):
-{{.Content}}`,
+	"agent_call": "**{{.Persona}}** ({{.Role}}):\n{{.Content}}",
 
-	"audit_rejection": `⚠️ **Audit Rejected by {{.AgentName}}**
-The code failed the security gates.
-**Findings:**
-{{.Findings}}`,
+	"audit_rejection": "⚠️ **Audit Rejected by {{.Persona}}**\nThe code failed the security gates.\n**Findings:**\n{{.Findings}}",
 
-	"completion": `✅ **Mission Accomplished!**
-Task ` + "`" + `{{.TaskID}}` + "`" + ` has been successfully completed.
-*Curse you, Perry the Platypus!*`,
+	"completion": "✅ **Mission Accomplished!**\nTask `{{.TaskID}}` has been successfully completed.\n*Curse you, Perry the Platypus!*",
 
-	"failure": `❌ **Mission Failed**
-Task ` + "`" + `{{.TaskID}}` + "`" + ` encountered a critical error.
-**Reason:** {{.Reason}}`,
+	"failure": "❌ **Mission Failed**\nTask `{{.TaskID}}` encountered a critical error.\n**Reason:** {{.Reason}}",
 }
 
 // Format returns a human-readable string for the given event type.
