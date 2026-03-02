@@ -13,3 +13,5 @@ perry
 perry_debug.log
 tmp/
 api_keys
+configs/discord.yaml
+*.env
