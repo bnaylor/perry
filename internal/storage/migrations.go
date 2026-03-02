@@ -1,6 +1,6 @@
 package storage
 
-const currentVersion = 1
+const currentVersion = 2
 
 var migrations = map[int]string{
 	1: `
@@ -54,5 +54,22 @@ CREATE TABLE IF NOT EXISTS agent_calls (
 CREATE INDEX IF NOT EXISTS idx_transitions_task_id ON transitions(task_id);
 CREATE INDEX IF NOT EXISTS idx_audit_records_task_id ON audit_records(task_id);
 CREATE INDEX IF NOT EXISTS idx_agent_calls_task_id ON agent_calls(task_id);
+`,
+	2: `
+CREATE TABLE IF NOT EXISTS internal_state (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS commands (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	task_id    TEXT REFERENCES tasks(id),
+	command    TEXT NOT NULL,
+	args       TEXT,
+	status     TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'processing', 'completed', 'failed'
+	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE tasks ADD COLUMN discord_thread_id TEXT;
 `,
 }

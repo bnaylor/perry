@@ -14,14 +14,15 @@ import (
 // Returns an error if a task with the same ID already exists.
 func (s *Store) Create(ctx context.Context, t *task.Task) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO tasks (id, description, created_by, state, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO tasks (id, description, created_by, state, created_at, updated_at, discord_thread_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		t.ID,
 		t.Description,
 		t.CreatedBy,
 		string(t.State),
 		t.CreatedAt,
 		time.Now(),
+		t.DiscordThreadID,
 	)
 	if err != nil {
 		return fmt.Errorf("create task %s: %w", t.ID, err)
@@ -33,13 +34,14 @@ func (s *Store) Create(ctx context.Context, t *task.Task) error {
 // Returns an error if the task does not exist.
 func (s *Store) Get(ctx context.Context, id string) (*task.Task, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, description, created_by, state, created_at FROM tasks WHERE id = ?`,
+		`SELECT id, description, created_by, state, created_at, discord_thread_id FROM tasks WHERE id = ?`,
 		id,
 	)
 
 	t := &task.Task{}
 	var state string
-	err := row.Scan(&t.ID, &t.Description, &t.CreatedBy, &state, &t.CreatedAt)
+	var threadID sql.NullString
+	err := row.Scan(&t.ID, &t.Description, &t.CreatedBy, &state, &t.CreatedAt, &threadID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("task %s not found", id)
 	}
@@ -47,6 +49,7 @@ func (s *Store) Get(ctx context.Context, id string) (*task.Task, error) {
 		return nil, fmt.Errorf("get task %s: %w", id, err)
 	}
 	t.State = task.State(state)
+	t.DiscordThreadID = threadID.String
 
 	// Load transition history ordered by insertion id (chronological).
 	rows, err := s.db.QueryContext(ctx,
@@ -80,9 +83,10 @@ func (s *Store) Get(ctx context.Context, id string) (*task.Task, error) {
 // Returns an error if no row was affected (task does not exist).
 func (s *Store) Update(ctx context.Context, t *task.Task) error {
 	result, err := s.db.ExecContext(ctx,
-		`UPDATE tasks SET state = ?, updated_at = ? WHERE id = ?`,
+		`UPDATE tasks SET state = ?, updated_at = ?, discord_thread_id = ? WHERE id = ?`,
 		string(t.State),
 		time.Now(),
+		t.DiscordThreadID,
 		t.ID,
 	)
 	if err != nil {
@@ -102,7 +106,7 @@ func (s *Store) Update(ctx context.Context, t *task.Task) error {
 // It does not load History for each task (avoids N+1 queries).
 func (s *Store) List(ctx context.Context) ([]*task.Task, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, description, created_by, state, created_at FROM tasks ORDER BY created_at`,
+		`SELECT id, description, created_by, state, created_at, discord_thread_id FROM tasks ORDER BY created_at`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks: %w", err)
@@ -113,10 +117,12 @@ func (s *Store) List(ctx context.Context) ([]*task.Task, error) {
 	for rows.Next() {
 		t := &task.Task{}
 		var state string
-		if err := rows.Scan(&t.ID, &t.Description, &t.CreatedBy, &state, &t.CreatedAt); err != nil {
+		var threadID sql.NullString
+		if err := rows.Scan(&t.ID, &t.Description, &t.CreatedBy, &state, &t.CreatedAt, &threadID); err != nil {
 			return nil, fmt.Errorf("scan task row: %w", err)
 		}
 		t.State = task.State(state)
+		t.DiscordThreadID = threadID.String
 		tasks = append(tasks, t)
 	}
 	if err := rows.Err(); err != nil {

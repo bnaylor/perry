@@ -35,12 +35,13 @@ type Transition struct {
 
 // Task is the central data object flowing through the FSM.
 type Task struct {
-	ID          string
-	Description string
-	CreatedBy   string
-	State       State
-	CreatedAt   time.Time
-	History     []Transition
+	ID              string
+	Description     string
+	CreatedBy       string
+	State           State
+	CreatedAt       time.Time
+	DiscordThreadID string // ID of the Discord thread for this task
+	History         []Transition
 }
 
 // New creates a task in the SUBMITTED state.
