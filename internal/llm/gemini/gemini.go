@@ -12,14 +12,6 @@ import (
 )
 
 // Provider implements llm.Provider for Gemini generateContent API.
-// POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}
-//
-// Key behaviors:
-// - System message -> system_instruction.parts
-// - Role mapping: "assistant" -> "model" (Gemini convention)
-// - Messages as contents with parts[].text structure
-// - API key in query string, not header
-// - baseURL field for test override
 type Provider struct {
 	apiKey  string
 	baseURL string
@@ -149,4 +141,46 @@ func (p *Provider) Complete(ctx context.Context, req llm.CompletionRequest) (llm
 			OutputTokens: gresp.UsageMetadata.CandidatesTokenCount,
 		},
 	}, nil
+}
+
+// ListModels fetches the list of available models from the Gemini API.
+func (p *Provider) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
+	url := fmt.Sprintf("%s/v1beta/models?key=%s", p.baseURL, p.apiKey)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gemini: create list request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("gemini: send list request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("gemini: list models API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var listResp struct {
+		Models []struct {
+			Name                        string   `json:"name"`
+			Description                 string   `json:"description"`
+			SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+		} `json:"models"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
+		return nil, fmt.Errorf("gemini: decode list response: %w", err)
+	}
+
+	var models []llm.ModelInfo
+	for _, m := range listResp.Models {
+		models = append(models, llm.ModelInfo{
+			Name:         m.Name,
+			Description:  m.Description,
+			Capabilities: m.SupportedGenerationMethods,
+		})
+	}
+	return models, nil
 }

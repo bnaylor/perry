@@ -1,7 +1,6 @@
 package openai
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,101 +10,69 @@ import (
 	"github.com/bnaylor/perry/internal/llm"
 )
 
-// Provider implements llm.Provider for OpenAI-compatible chat API.
-// POST {baseURL}/v1/chat/completions
+// Provider implements llm.Provider for OpenAI-compatible APIs.
 type Provider struct {
 	baseURL string
 	apiKey  string
 }
 
+// New creates a new OpenAI provider with the given base URL and API key.
 func New(baseURL, apiKey string) *Provider {
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
 	return &Provider{baseURL: baseURL, apiKey: apiKey}
 }
 
+// Name returns "openai".
 func (p *Provider) Name() string {
 	return "openai"
 }
 
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	Stream      bool          `json:"stream"`
-	Temperature float64       `json:"temperature,omitempty"`
-}
-
-type chatResponse struct {
-	Choices []struct {
-		Message chatMessage `json:"message"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-	} `json:"usage"`
-}
-
+// Complete sends a completion request to the OpenAI API.
 func (p *Provider) Complete(ctx context.Context, req llm.CompletionRequest) (llm.CompletionResponse, error) {
-	msgs := make([]chatMessage, len(req.Messages))
-	for i, m := range req.Messages {
-		msgs[i] = chatMessage{Role: m.Role, Content: m.Content}
-	}
+	return llm.CompletionResponse{}, fmt.Errorf("openai: Complete not yet implemented")
+}
 
-	body := chatRequest{
-		Model:       req.Model,
-		Messages:    msgs,
-		Stream:      false,
-		Temperature: req.Temperature,
-	}
-
-	jsonBody, err := json.Marshal(body)
+// ListModels fetches the list of available models from the OpenAI API.
+func (p *Provider) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
+	url := p.baseURL + "/models"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return llm.CompletionResponse{}, fmt.Errorf("openai: marshal request: %w", err)
+		return nil, fmt.Errorf("openai: create request: %w", err)
 	}
 
-	url := p.baseURL + "/v1/chat/completions"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return llm.CompletionResponse{}, fmt.Errorf("openai: create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
 	if p.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
 
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return llm.CompletionResponse{}, fmt.Errorf("openai: send request: %w", err)
+		return nil, fmt.Errorf("openai: send request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return llm.CompletionResponse{}, fmt.Errorf("openai: read response: %w", err)
-	}
-
 	if resp.StatusCode != http.StatusOK {
-		return llm.CompletionResponse{}, fmt.Errorf("openai: API error %d: %s", resp.StatusCode, string(respBody))
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("openai: list models API error %d: %s", resp.StatusCode, string(body))
 	}
 
-	var chatResp chatResponse
-	if err := json.Unmarshal(respBody, &chatResp); err != nil {
-		return llm.CompletionResponse{}, fmt.Errorf("openai: unmarshal response: %w", err)
+	var listResp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
 	}
 
-	if len(chatResp.Choices) == 0 {
-		return llm.CompletionResponse{}, fmt.Errorf("openai: no choices in response")
+	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
+		return nil, fmt.Errorf("openai: decode response: %w", err)
 	}
 
-	return llm.CompletionResponse{
-		Content: chatResp.Choices[0].Message.Content,
-		Model:   req.Model,
-		Usage: llm.Usage{
-			InputTokens:  chatResp.Usage.PromptTokens,
-			OutputTokens: chatResp.Usage.CompletionTokens,
-		},
-	}, nil
+	var models []llm.ModelInfo
+	for _, m := range listResp.Data {
+		models = append(models, llm.ModelInfo{
+			Name:         m.ID,
+			Capabilities: []string{"chat"},
+		})
+	}
+	return models, nil
 }

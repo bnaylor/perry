@@ -30,14 +30,8 @@ func main() {
 
 	// Parse flags
 	dbPath := flag.String("db-path", ".perry/perry.db", "path to SQLite database")
+	listModels := flag.Bool("models", false, "list available models from all providers and exit")
 	flag.Parse()
-
-	// Get task description from remaining args
-	if flag.NArg() < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: perry [--db-path path] <task description>\n")
-		os.Exit(1)
-	}
-	taskDesc := flag.Arg(0)
 
 	// Load config
 	routingCfg, err := config.LoadRoutingConfig("configs/routing.yaml")
@@ -53,6 +47,30 @@ func main() {
 
 	// Build provider map from routing config
 	providerMap := providers.BuildProviderMap(routingCfg)
+
+	if *listModels {
+		fmt.Println("Available Models by Provider:")
+		fmt.Println("==============================")
+		for name, p := range providerMap {
+			fmt.Printf("\nProvider: %s\n", name)
+			models, err := p.ListModels(ctx)
+			if err != nil {
+				fmt.Printf("  Error: %v\n", err)
+				continue
+			}
+			for _, m := range models {
+				fmt.Printf("  - %-30s (%v)\n", m.Name, m.Capabilities)
+			}
+		}
+		os.Exit(0)
+	}
+
+	// Get task description from remaining args
+	if flag.NArg() < 1 {
+		fmt.Fprintf(os.Stderr, "Usage: perry [--db-path path] [--models] <task description>\n")
+		os.Exit(1)
+	}
+	taskDesc := flag.Arg(0)
 
 	agents := map[agent.Role]agent.Agent{
 		agent.RoleStrategist:    agent.NewStrategist(),

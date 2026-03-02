@@ -23,3 +23,11 @@ func (m *MockProvider) Complete(_ context.Context, req CompletionRequest) (Compl
 		Usage:   Usage{InputTokens: 10, OutputTokens: 5},
 	}, nil
 }
+
+// ListModels returns a mock list of models.
+func (m *MockProvider) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	return []ModelInfo{
+		{Name: "mock-model-1", Capabilities: []string{"generateContent"}},
+		{Name: "mock-model-2", Capabilities: []string{"generateContent"}},
+	}, nil
+}

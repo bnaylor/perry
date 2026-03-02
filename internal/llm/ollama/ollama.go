@@ -12,14 +12,6 @@ import (
 )
 
 // Provider implements llm.Provider for Ollama chat API.
-// POST {baseURL}/api/chat
-//
-// Key behaviors:
-// - Messages passed through as-is (system, user, assistant all supported natively)
-// - stream: false for synchronous response
-// - No API key — local service
-// - Temperature in options.temperature
-// - baseURL from constructor
 type Provider struct {
 	baseURL string
 }
@@ -117,4 +109,37 @@ func (p *Provider) Complete(ctx context.Context, req llm.CompletionRequest) (llm
 			OutputTokens: chatResp.EvalCount,
 		},
 	}, nil
+}
+
+// ListModels returns the list of models available on the Ollama node.
+func (p *Provider) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
+	resp, err := http.Get(p.baseURL + "/api/tags")
+	if err != nil {
+		return nil, fmt.Errorf("ollama: list models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ollama: list models API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tagsResp struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&tagsResp); err != nil {
+		return nil, fmt.Errorf("ollama: decode tags response: %w", err)
+	}
+
+	var models []llm.ModelInfo
+	for _, m := range tagsResp.Models {
+		models = append(models, llm.ModelInfo{
+			Name:         m.Name,
+			Capabilities: []string{"chat"}, // Ollama default
+		})
+	}
+	return models, nil
 }
