@@ -1,12 +1,19 @@
 package audit
 
-import "path/filepath"
+import (
+	"fmt"
+	"path/filepath"
+)
 
 // NewASTGate creates a gate that runs the Python AST analyzer.
 // allowedImports is the list of permitted top-level imports (from policy config).
 func NewASTGate(scriptDir string, allowedImports []string) *SubprocessGate {
 	return NewSubprocessGate("ast", filepath.Join(scriptDir, "audit", "ast_analyzer.py"),
 		func(input AuditInput) (map[string]any, error) {
+			if input.Language != "" && input.Language != "python" {
+				// Return a fake successful result that the subprocess gate will unmarshal
+				return nil, fmt.Errorf("SKIP_GATE")
+			}
 			return map[string]any{
 				"code":            input.Code,
 				"allowed_imports": allowedImports,

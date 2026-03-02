@@ -304,6 +304,11 @@
       "required": ["permitted_operations", "prohibited_operations"],
       "additionalProperties": false,
       "properties": {
+        "language": {
+          "type": "string",
+          "enum": ["go", "python", "javascript", "bash"],
+          "description": "The target programming language for the task."
+        },
         "permitted_operations": {
           "type": "array",
           "items": {
@@ -464,6 +469,29 @@
             "description": "List of package imports."
           }
         }
+      }
+    },
+
+    "dependencies": {
+      "type": "object",
+      "description": "Libraries and tools the Coder may need.",
+      "additionalProperties": false,
+      "properties": {
+        "python": { "type": ["array", "null"] },
+        "system": { "type": ["array", "null"] },
+        "npm": { "type": ["array", "null"] }
+      }
+    },
+
+    "environment": {
+      "type": ["object", "null"],
+      "description": "Runtime environment requirements.",
+      "additionalProperties": false,
+      "properties": {
+        "python_version": { "type": ["string", "null"] },
+        "docker_base_image": { "type": ["string", "null"] },
+        "env_vars_required": { "type": ["array", "null"] },
+        "mount_paths": { "type": ["array", "null"] }
       }
     }
   }

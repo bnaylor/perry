@@ -19,6 +19,7 @@ type GateResult struct {
 // AuditInput is what gets fed into the audit pipeline.
 type AuditInput struct {
 	Code          string
+	Language      string
 	ContextPacket map[string]any // the validated context packet
 	Requirements  string         // PM's requirements summary
 }

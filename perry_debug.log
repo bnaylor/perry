@@ -1,0 +1,25 @@
+perry: secure agentic platform
+================================
+Task: Implement an AgentMetadata map in the Task struct (role -> model_name) to track which model version was used for each agent, and update the Store to persist it.
+
+time=2026-03-01T21:15:17.612-05:00 level=INFO msg="task submitted" id=task-e6c5e22b64704262 description="Implement an AgentMetadata map in the Task struct (role -> model_name) to track which model version was used for each agent, and update the Store to persist it."
+Task task-e6c5e22b64704262 submitted
+
+Running through state machine:
+  SUBMITTED → PLANNING
+time=2026-03-01T21:15:17.612-05:00 level=INFO msg="state transition" task=task-e6c5e22b64704262 to=PLANNING reason=auto
+  PLANNING → RESEARCHING
+time=2026-03-01T21:15:30.000-05:00 level=INFO msg="state transition" task=task-e6c5e22b64704262 to=RESEARCHING reason="requirements ready"
+  RESEARCHING → PACKET_VALIDATION
+time=2026-03-01T21:16:07.782-05:00 level=INFO msg="state transition" task=task-e6c5e22b64704262 to=PACKET_VALIDATION reason="context packet produced"
+  PACKET_VALIDATION → CODING
+time=2026-03-01T21:16:08.064-05:00 level=INFO msg="state transition" task=task-e6c5e22b64704262 to=CODING reason="packet validated"
+  CODING → AUDITING
+time=2026-03-01T21:16:09.744-05:00 level=INFO msg="state transition" task=task-e6c5e22b64704262 to=AUDITING reason="code ready for audit"
+  AUDITING → CODING
+time=2026-03-01T21:16:09.874-05:00 level=INFO msg="state transition" task=task-e6c5e22b64704262 to=CODING reason="audit rejected, revision needed"
+  CODING → AUDITING
+time=2026-03-01T21:16:11.542-05:00 level=INFO msg="state transition" task=task-e6c5e22b64704262 to=AUDITING reason="code ready for audit"
+  AUDITING → CODING
+time=2026-03-01T21:16:11.685-05:00 level=INFO msg="state transition" task=task-e6c5e22b64704262 to=CODING reason="audit rejected, revision needed"
+time=2026-03-01T21:16:11.760-05:00 level=ERROR msg="step failed" error="coder failed: LLM call failed for coder: anthropic: API error 401: {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"x-api-key header is required\"},\"request_id\":\"req_011CYdSyTg421bRn2VBDrFbo\"}" state=CODING

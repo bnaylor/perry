@@ -25,7 +25,8 @@ The Perry project structure is:
 - internal/fsm: State machine definitions
 - internal/orchestrator: Central control logic
 - internal/task: Task and state definitions
-- internal/llm: LLM provider integrations`
+- internal/llm: LLM provider integrations
+- internal/storage: SQLite persistence layer`
 
 type Strategist struct{}
 

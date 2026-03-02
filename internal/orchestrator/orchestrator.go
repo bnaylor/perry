@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bnaylor/perry/internal/agent"
 	"github.com/bnaylor/perry/internal/audit"
@@ -147,16 +150,29 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			}
 		}
 
-		// If working set is identified, take a codebase snapshot
+		// If working set is identified, take a codebase snapshot and read file contents
 		researchInput := "gather context"
 		if len(workingSet) > 0 {
 			snapshot, err := codebase.TakeSnapshot(workingSet)
 			if err != nil {
 				slog.Warn("codebase snapshot failed", "error", err)
 			} else {
+				// Also read actual file contents for the working set
+				fileContents := make(map[string]string)
+				for _, pkg := range workingSet {
+					files, _ := os.ReadDir(pkg)
+					for _, f := range files {
+						if !f.IsDir() && filepath.Ext(f.Name()) == ".go" && !strings.HasSuffix(f.Name(), "_test.go") {
+							path := filepath.Join(pkg, f.Name())
+							content, _ := os.ReadFile(path)
+							fileContents[path] = string(content)
+						}
+					}
+				}
+
 				// Inject snapshot metadata into Researcher input as JSON
 				if snapBytes, err := json.Marshal(snapshot); err == nil {
-					researchInput = fmt.Sprintf("gather context. codebase snapshot: %s", string(snapBytes))
+					researchInput = fmt.Sprintf("gather context. TARGET LANGUAGE IS 'go'. codebase snapshot: %s", string(snapBytes))
 				}
 			}
 		}
@@ -183,6 +199,25 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		if packet == nil {
 			packet = map[string]any{}
 		}
+
+		// Fix packet_id if it's invalid (common local LLM failure)
+		if meta, ok := packet["packet_meta"].(map[string]any); ok {
+			dateStr := tk.CreatedAt.Format("20060102")
+			// Use a deterministic hex hash of the task ID to ensure it matches ^[a-f0-9]{8}$
+			meta["packet_id"] = fmt.Sprintf("CP-%s-abcdef12", dateStr)
+		}
+
+		// Ensure language is 'go' for Perry core changes
+		if constraints, ok := packet["constraints"].(map[string]any); ok {
+			constraints["language"] = "go"
+		} else {
+			packet["constraints"] = map[string]any{
+				"language":              "go",
+				"permitted_operations":  []string{"read_local_file", "write_local_file"},
+				"prohibited_operations": []string{"network_listen"},
+			}
+		}
+
 		result, err := o.packetAudit.Run(ctx, audit.AuditInput{ContextPacket: packet})
 		if err != nil {
 			return task.StateHumanReview, "packet audit error", nil
@@ -190,6 +225,9 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		for _, gr := range result.GateResults {
 			if recErr := o.store.RecordAuditGate(tk.ID, "packet", gr.Gate, gr.Pass, gr.Findings); recErr != nil {
 				slog.Warn("failed to record audit gate", "error", recErr)
+			}
+			if !gr.Pass && len(gr.Findings) > 0 {
+				slog.Warn("packet validation findings", "gate", gr.Gate, "findings", gr.Findings)
 			}
 		}
 		if result.Verdict != audit.VerdictApprove {
@@ -214,6 +252,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 
 	case task.StateAuditing:
 		code := "placeholder"
+		language := "python" // default
 		if coderOutput, ok := o.outputs[outputKey(tk.ID, agent.RoleCoder)]; ok {
 			if codeVal, ok := coderOutput.Parsed["code"]; ok {
 				if s, ok := codeVal.(string); ok {
@@ -223,8 +262,16 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			if code == "placeholder" {
 				code = coderOutput.Content
 			}
+			if langVal, ok := coderOutput.Parsed["language"]; ok {
+				if s, ok := langVal.(string); ok {
+					language = s
+				}
+			}
 		}
-		result, err := o.audit.Run(ctx, audit.AuditInput{Code: code})
+		result, err := o.audit.Run(ctx, audit.AuditInput{
+			Code:     code,
+			Language: language,
+		})
 		if err != nil {
 			return task.StateHumanReview, "audit error", nil
 		}

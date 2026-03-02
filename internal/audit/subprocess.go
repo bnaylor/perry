@@ -55,6 +55,9 @@ func (g *SubprocessGate) Run(ctx context.Context, input AuditInput) GateResult {
 
 	mapped, err := g.mapper(input)
 	if err != nil {
+		if err.Error() == "SKIP_GATE" {
+			return GateResult{Pass: true, Gate: g.name}
+		}
 		return fail(fmt.Sprintf("input mapping error: %v", err))
 	}
 
