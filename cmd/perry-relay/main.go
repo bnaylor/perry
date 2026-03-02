@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bnaylor/perry/internal/agent"
+	"github.com/bnaylor/perry/internal/config"
 	"github.com/bnaylor/perry/internal/discord"
 	"github.com/bnaylor/perry/internal/storage"
 	"github.com/bnaylor/perry/internal/task"
@@ -27,29 +28,39 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	dbPath := flag.String("db-path", ".perry/perry.db", "path to SQLite database")
-	channelID := flag.String("channel-id", "1477155447260577917", "coordination channel ID")
+	discordCfgPath := flag.String("discord-config", "configs/discord.yaml", "path to discord config")
 	flag.Parse()
 
-	tokens := map[agent.Role]string{
-		agent.RoleStrategist:    os.Getenv("DISCORD_TOKEN_BOSS"),
-		agent.RoleCoder:         os.Getenv("DISCORD_TOKEN_FERB"),
-		agent.RoleAuditor:       os.Getenv("DISCORD_TOKEN_CARL"),
-		agent.RoleShadowAuditor: os.Getenv("DISCORD_TOKEN_DOOF"),
-		agent.RoleResearcher:    os.Getenv("DISCORD_TOKEN_PHINEAS"),
+	// Load Discord Config
+	dCfg, err := config.LoadDiscordConfig(*discordCfgPath)
+	if err != nil {
+		slog.Error("failed to load discord config", "error", err)
+		os.Exit(1)
 	}
 
+	// Map roles from config to agent.Role
 	activeTokens := make(map[agent.Role]string)
-	for r, t := range tokens {
-		if t != "" {
-			activeTokens[r] = t
+	roleMap := map[string]agent.Role{
+		"strategist":     agent.RoleStrategist,
+		"researcher":     agent.RoleResearcher,
+		"coder":          agent.RoleCoder,
+		"auditor":        agent.RoleAuditor,
+		"shadow_auditor": agent.RoleShadowAuditor,
+		"orchestrator":   agent.Role("orchestrator"), // Agent P
+	}
+
+	for cfgKey, agentRole := range roleMap {
+		if role, ok := dCfg.Roles[cfgKey]; ok && role.Token != "" {
+			activeTokens[agentRole] = role.Token
 		}
 	}
 
 	if len(activeTokens) == 0 {
-		slog.Error("no discord tokens provided")
+		slog.Error("no discord tokens found in config")
 		os.Exit(1)
 	}
 
+	// Initialize Storage
 	store, err := storage.NewStore(*dbPath)
 	if err != nil {
 		slog.Error("failed to open storage", "error", err)
@@ -57,6 +68,7 @@ func main() {
 	}
 	defer store.Close()
 
+	// Initialize Discord Client
 	client := discord.NewClient(activeTokens)
 	if err := client.Start(); err != nil {
 		slog.Error("failed to start discord client", "error", err)
@@ -67,6 +79,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Handle inbound commands
 	client.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m.Author.Bot {
 			return
@@ -74,23 +87,7 @@ func main() {
 		if len(m.Content) > 0 && m.Content[0] == '!' {
 			slog.Info("received command from discord", "content", m.Content, "author", m.Author.Username)
 			
-			// Basic parsing: !command [taskID] [args...]
-			// For now, let's keep it simple.
-			// !status task-xxxx
-			// !approve task-xxxx
-			
-			// We'll write the raw content and let the orchestrator parse it for now, 
-			// or do a bit of light lifting here.
-			
-			// TODO: Resolve taskID from context (e.g. if in a thread)
-			taskID := ""
-			channel, err := s.Channel(m.ChannelID)
-			if err == nil && channel.IsThread() {
-				// If we're in a thread, we might be able to map it back to a task.
-				// We'll need a way to look up task by thread ID.
-				// For now, we'll just write the command and let the poller find it.
-			}
-
+			taskID := "" // TODO: Extract taskID if in thread
 			_, err = store.AddCommand(ctx, taskID, m.Content, m.ChannelID)
 			if err != nil {
 				slog.Error("failed to write command to db", "error", err)
@@ -98,7 +95,7 @@ func main() {
 		}
 	})
 
-	go runPoller(ctx, store, client, *channelID)
+	go runPoller(ctx, store, client, dCfg.Channels.Coordination)
 
 	slog.Info("perry-relay started")
 
@@ -180,8 +177,8 @@ func pollTransitions(ctx context.Context, store *storage.Store, client *discord.
 			Reason:      r.Reason,
 		})
 		if err == nil {
-			// Always send transitions as Strategist (Major Monogram)
-			if err := client.SendMessage(agent.RoleStrategist, targetChannel, content); err != nil {
+			// Always send transitions as Agent P (orchestrator role in config)
+			if err := client.SendMessage(agent.Role("orchestrator"), targetChannel, content); err != nil {
 				slog.Error("failed to send transition message", "error", err)
 			}
 		}

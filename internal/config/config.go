@@ -32,3 +32,28 @@ func LoadPolicyConfig(path string) (policy.Config, error) {
 	}
 	return cfg, nil
 }
+
+type DiscordConfig struct {
+	Roles    map[string]DiscordRole `yaml:"roles"`
+	Channels struct {
+		Coordination string `yaml:"coordination"`
+	} `yaml:"channels"`
+}
+
+type DiscordRole struct {
+	Character string `yaml:"character"`
+	Nickname  string `yaml:"nickname"`
+	Token     string `yaml:"token"`
+}
+
+func LoadDiscordConfig(path string) (DiscordConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return DiscordConfig{}, fmt.Errorf("read discord config: %w", err)
+	}
+	var cfg DiscordConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return DiscordConfig{}, fmt.Errorf("parse discord config: %w", err)
+	}
+	return cfg, nil
+}
