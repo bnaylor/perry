@@ -1,82 +1,69 @@
 # Reference: Local LLM Cluster Configuration (Phase 2)
 
+**Last Updated:** March 2, 2026
+
 ## Hardware Profile: The "Perry Cluster"
-We are moving from a single-node setup to a **Dual-Node Local Cluster** to allow simultaneous execution of high-reasoning agents.
+We use a **Dual-Node Local Cluster** to distribute the workload between code generation and adversarial auditing.
 
 ### Node 1: The "Heavy" ("diffuser", Linux box)
+- **IP:** `10.3.2.8`
 - **Specs:** Ryzen 9, 64GB RAM, RTX 4070 Ti Super (16GB VRAM)
-- **Primary Role:** **The Coder / Primary Architect**
-- **Model:** `qwen2.5-coder:32b` (32k-64k Context)
-- **Rationale:** Highest CUDA throughput for rapid code generation.
+- **Primary Role:** **The Coder / Strategist**
+- **Models:** 
+  - `qwen3:14b` (Primary Coder)
+  - `qwen2.5-coder:14b` (Semantic Auditor)
+- **Rationale:** High CUDA throughput for rapid code generation and initial semantic analysis.
 
-### Node 2: The "Brain" (Khadas Mind 2, Linux box)
-- **Specs:** Intel Core Ultra 7, 64GB RAM, RTX 4060 (16GB VRAM)
-- **Primary Role:** **The Shadow Auditor / Secondary Architect**
-- **Model:** `deepseek-r1:32b` (32k Context)
+### Node 2: The "Brain" ("mink", Linux box)
+- **IP:** `10.3.2.48`
+- **Specs:** Ryzen 7, 64GB RAM, RTX 4060 Ti (16GB VRAM)
+- **Primary Role:** **The Shadow Auditor (Adversarial)**
+- **Model:** `deepseek-r1:14b`
 - **Special Ops:** 
-    - **Arc iGPU:** Running OpenVINO-optimized `Llama-Guard` for real-time safety filtering.
-    - **NPU (34 TOPS):** Offloading embedding generation for codebase indexing (Phase 3).
+    - **Service Config:** Ollama is configured to listen on `0.0.0.0` (via `/etc/systemd/system/ollama.service.d/override.conf`) to allow cluster-wide access.
 
 ## Cluster Role Distribution (The Roundtable)
-By using two nodes, we can run a "Parallel Roundtable" without VRAM contention.
+By using two nodes, we run the "Parallel Roundtable" without VRAM contention on a single card.
 
-| Task | Node 1 (Linux) | Node 2 (Khadas) |
-| :--- | :--- | :--- |
-| **Ideating** | Architect (Qwen 32b) | Architect (DeepSeek 32b) |
-| **Auditing** | Coder (Qwen 32b) | Shadow Auditor (DeepSeek 32b) |
-| **Execution** | Sandbox Runner | Notary / Result Scanner |
+| Role | Provider | Node | Model |
+| :--- | :--- | :--- | :--- |
+| **Strategist** | cloud-gemini | Cloud | `gemini-3-flash-preview` |
+| **Researcher** | cloud-gemini | Cloud | `gemini-3-flash-preview` |
+| **Coder** | local-cuda | Node 1 (diffuser) | `qwen3:14b` |
+| **Auditor (Semantic)** | local-cuda | Node 1 (diffuser) | `qwen2.5-coder:14b` |
+| **Auditor (Shadow)** | local-npu | Node 2 (mink) | `deepseek-r1:14b` |
 
-## Optimization: The 32k Context Fix
-Ollama's default 4k context is insufficient. We are targeting **32,768 (32k)** context for all cluster nodes.
+## Verification & Discovery
+The `perry` binary now includes built-in tools for verifying cluster readiness.
+
+### 1. Model Listing
+Use the `--models` flag to see all available models across the cluster:
+```bash
+./bin/perry --models
+```
+This confirms connectivity to both `local-cuda` (Node 1) and `local-npu` (Node 2) and lists their active models and capabilities.
+
+### 2. Connectivity Troubleshooting
+If a node is unreachable:
+1. **Ping:** Check network connectivity (`ping 10.3.2.48`).
+2. **Service Port:** Verify Ollama is running and listening (`curl http://10.3.2.48:11434/api/tags`).
+3. **Listen Address:** Ensure `OLLAMA_HOST=0.0.0.0` is set in the systemd environment on the target node.
+
+## Optimization: The Context Window
+We target a **32k** context window for local models to handle large codebase snapshots (Mirror Cage).
 
 ### Custom Modelfile (Permanent)
-Create a `perry-cluster.Modelfile` on both nodes:
+To ensure consistent context across restarts, create a custom model:
 ```dockerfile
-FROM qwen2.5-coder:32b # or deepseek-r1:32b
+FROM qwen3:14b
 PARAMETER num_ctx 32768
 PARAMETER temperature 0.2
 ```
-Then run: `ollama create perry-agent -f perry-cluster.Modelfile`
-
-## Multi-Node Dispatching
-The Perry Go orchestrator's `Dispatcher` must be updated to support named `provider_instances`. 
-
-### `routing.yaml` Example (Proposed)
-```yaml
-providers:
-  - name: local-cuda
-    type: ollama
-    base_url: "http://<linux-box-ip>:11434"
-  - name: local-npu
-    type: ollama
-    base_url: "http://<khadas-mind-ip>:11434"
-
-routing:
-  roles:
-    coder: local-cuda
-    auditor: local-npu
-    architect: [local-cuda, local-npu] # Round-robin or capability-based
-```
-
-## Tuning Observations & Performance Trade-offs
-
-### 1. The VRAM vs. Context (KV Cache) Pressure
-Increasing `num_ctx` to 32k or 64k significantly increases the **KV Cache** footprint in VRAM. 
-- **The "Speed Cliff":** If combined weights + cache exceed 16GB, Ollama will offload more layers to System RAM, causing performance to drop from ~10 t/s to ~2 t/s.
-- **Tuning Tip:** If performance tanks at 32k, try dropping to **24k** or using lighter quantization.
-
-### 2. Quantization Strategy for the "Sovereign Cluster"
-- **32b Models (Sweet Spot):** Use `Q4_K_M`. Best balance of logic retention and speed.
-- **70b Models (The Genius Tier):** **Caveat:** Q3 quantization for 70b models (like Llama-3) often results in a significant loss of reasoning capability compared to higher-bit 32b models. Use these strictly for non-critical brainstorming. For high-stakes reasoning, prefer cloud escalation (Claude/Gemini).
-
-### 3. Offloading Background Tasks (Arc & NPU)
-To keep the main NVIDIA GPUs 100% available for the Coder/Auditor, we use the Khadas Mind's secondary silicon:
-- **Arc iGPU (OpenVINO):** Optimized for **Llama-Guard** (Input/Output Safety Firewall).
-- **NPU (34 TOPS):** Optimized for **Local Embeddings** (Codebase Indexing).
+Then run: `ollama create perry-coder -f Modelfile`
 
 ## Deployment Checklist
-1. [ ] `ollama pull qwen2.5-coder:32b` (Node 1)
-2. [ ] `ollama pull deepseek-r1:32b` (Node 2)
-3. [ ] Create `perry-agent` with 32k `num_ctx` on both.
-4. [ ] Run `scripts/setup-cluster.sh` (Auto-pulls models, creates Modelfiles, runs smoke tests).
-5. [ ] **Verification:** Run a 200-line code file through the Coder and monitor VRAM % to ensure no OOM.
+1. [x] Node 1: `ollama pull qwen3:14b`
+2. [x] Node 1: `ollama pull qwen2.5-coder:14b`
+3. [x] Node 2: `ollama pull deepseek-r1:14b`
+4. [x] Node 2: Configure `OLLAMA_HOST=0.0.0.0`.
+5. [x] **Verification:** Run `./bin/perry --models` and ensure all three providers respond.
