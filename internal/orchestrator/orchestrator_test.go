@@ -3,6 +3,7 @@ package orchestrator
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/bnaylor/perry/internal/agent"
@@ -161,6 +162,76 @@ type rejectingGate struct{}
 func (g *rejectingGate) Name() string { return "reject" }
 func (g *rejectingGate) Run(_ context.Context, _ audit.AuditInput) audit.GateResult {
 	return audit.GateResult{Pass: false, Gate: "reject", Findings: []string{"packet invalid"}}
+}
+
+// recordingNotary captures the ReviewRequest for assertion.
+type recordingNotary struct {
+	lastReq  notary.ReviewRequest
+	approved bool
+}
+
+func (r *recordingNotary) Review(_ context.Context, req notary.ReviewRequest) (notary.ReviewResult, error) {
+	r.lastReq = req
+	return notary.ReviewResult{Approved: r.approved, Reason: "recorded"}, nil
+}
+
+func TestOrchestratorPassesArtifactPathToNotary(t *testing.T) {
+	store, err := storage.NewStore(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+
+	provider := llm.NewMockProvider("test-model", "mock response")
+	agents := map[agent.Role]agent.Agent{
+		agent.RoleStrategist:    agent.NewMockAgent(agent.RoleStrategist),
+		agent.RoleResearcher:    agent.NewMockAgent(agent.RoleResearcher),
+		agent.RoleCoder:         agent.NewMockAgent(agent.RoleCoder),
+		agent.RoleAuditor:       agent.NewMockAgent(agent.RoleAuditor),
+		agent.RoleShadowAuditor: agent.NewMockAgent(agent.RoleShadowAuditor),
+	}
+
+	rec := &recordingNotary{approved: true}
+
+	// Create a temp dir with a file to simulate executor output.
+	outDir := t.TempDir()
+	require.NoError(t, os.WriteFile(outDir+"/result.json", []byte(`{"ok":true}`), 0644))
+	mockExec := executor.NewMockExecutor(executor.Result{
+		Success: true, Output: outDir, ExitCode: 0,
+	})
+
+	orch := NewOrchestrator(Config{
+		FSM:   fsm.New(),
+		Store: store,
+		Runner: agent.NewRunner(agents, map[string]llm.Provider{
+			"mock": provider,
+		}),
+		Dispatcher: dispatch.New(dispatch.Config{
+			Defaults: map[string]dispatch.RouteConfig{
+				"strategist":       {Tier: "cloud", Provider: "mock", Model: "test"},
+				"researcher":       {Tier: "cloud", Provider: "mock", Model: "test"},
+				"coder":            {Tier: "local", Provider: "mock", Model: "test"},
+				"auditor_semantic": {Tier: "cloud", Provider: "mock", Model: "test"},
+				"auditor_shadow":   {Tier: "cloud", Provider: "mock", Model: "test"},
+			},
+			Escalation: dispatch.EscalationConfig{MaxLocalAttempts: 3, PromoteTo: dispatch.RouteConfig{Tier: "cloud", Provider: "mock", Model: "test"}},
+		}),
+		Policy:   policy.NewEngine(policy.Config{MaxTokensPerTask: 100000, MaxCostPerTask: 5.0}),
+		Audit:    allPassingPipeline(),
+		Executor: mockExec,
+		Notary:   rec,
+	})
+
+	ctx := context.Background()
+	tk, err := orch.Submit(ctx, "test artifact path", "user-1")
+	require.NoError(t, err)
+
+	// Run to completion.
+	for tk.State != task.StateCompleted {
+		require.NoError(t, orch.Step(ctx, tk))
+	}
+
+	// The notary should have received a real path, not "placeholder".
+	assert.NotEqual(t, "placeholder", rec.lastReq.ArtifactPath)
+	assert.Contains(t, rec.lastReq.ArtifactPath, tk.ID)
 }
 
 func TestOrchestratorStepAtCompletedIsNoop(t *testing.T) {

@@ -44,7 +44,8 @@ type Orchestrator struct {
 	packetAudit *audit.Pipeline
 	executor    executor.Executor
 	notary      notary.Notary
-	outputs     map[string]agent.AgentOutput // keyed by "taskID:role"
+	outputs      map[string]agent.AgentOutput // keyed by "taskID:role"
+	artifactPaths map[string]string            // keyed by taskID
 }
 
 // NewOrchestrator creates an orchestrator with all dependencies.
@@ -59,7 +60,8 @@ func NewOrchestrator(cfg Config) *Orchestrator {
 		packetAudit: cfg.PacketAudit,
 		executor:    cfg.Executor,
 		notary:      cfg.Notary,
-		outputs:     make(map[string]agent.AgentOutput),
+		outputs:       make(map[string]agent.AgentOutput),
+		artifactPaths: make(map[string]string),
 	}
 }
 
@@ -388,6 +390,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 				slog.Warn("failed to move artifacts", "error", moveErr)
 			} else {
 				artifactPath = managedPath
+				o.artifactPaths[tk.ID] = managedPath
 			}
 		}
 		if recErr := o.store.RecordExecution(tk.ID, result.ExitCode, result.Logs, artifactPath); recErr != nil {
@@ -400,7 +403,8 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		return task.StateOutputReview, "execution complete", nil
 
 	case task.StateOutputReview:
-		result, err := o.notary.Review(ctx, notary.ReviewRequest{ArtifactPath: "placeholder"})
+		artifactPath := o.artifactPaths[tk.ID]
+		result, err := o.notary.Review(ctx, notary.ReviewRequest{ArtifactPath: artifactPath})
 		if err != nil {
 			return task.StateHumanReview, "notary error", nil
 		}

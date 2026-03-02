@@ -191,8 +191,16 @@ func (d *DockerExecutor) Run(ctx context.Context, req RunRequest) (Result, error
 	// 11. Capture logs (best-effort).
 	logs := d.captureLogs(ctx, containerID)
 
-	// 12. Check if output directory has any files.
-	output := d.checkOutput(outDir)
+	// 12. Check if output directory has any files and enforce size limit.
+	output, outErr := d.checkOutput(outDir)
+	if outErr != nil {
+		return Result{
+			Success:  false,
+			ExitCode: int(statusCode),
+			Logs:     logs,
+			Output:   "",
+		}, outErr
+	}
 
 	// 13. Return result.
 	return Result{
@@ -289,13 +297,33 @@ func (d *DockerExecutor) captureLogs(ctx context.Context, containerID string) st
 	return buf.String()
 }
 
-// checkOutput returns the output directory path if it contains any files,
-// or empty string (and cleans up) if no output was produced.
-func (d *DockerExecutor) checkOutput(outDir string) string {
+// checkOutput returns the output directory path if it contains any files
+// within the size limit, or empty string (and cleans up) if no output was
+// produced or the output exceeds the configured OutSizeBytes limit.
+func (d *DockerExecutor) checkOutput(outDir string) (string, error) {
 	entries, err := os.ReadDir(outDir)
 	if err != nil || len(entries) == 0 {
 		os.RemoveAll(outDir)
-		return ""
+		return "", nil
 	}
-	return outDir
+
+	// Enforce output size limit.
+	if d.limits.OutSizeBytes > 0 {
+		var totalSize int64
+		for _, entry := range entries {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			totalSize += info.Size()
+		}
+		if totalSize > d.limits.OutSizeBytes {
+			slog.Warn("output exceeds size limit, discarding",
+				"total", totalSize, "limit", d.limits.OutSizeBytes)
+			os.RemoveAll(outDir)
+			return "", fmt.Errorf("output size %d exceeds limit %d", totalSize, d.limits.OutSizeBytes)
+		}
+	}
+
+	return outDir, nil
 }

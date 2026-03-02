@@ -1,5 +1,5 @@
 # Perry: Secure Agentic Platform
-Last update: 2026-03-01 09:33
+Last update: 2026-03-02
 
 ## What Is This?
 
@@ -38,7 +38,7 @@ Perry is a security-first platform for orchestrating AI agents that do real work
 | Audit tooling | **Python** (subprocess) | AST module, Bandit, jsonschema — ecosystem is Python-native |
 | Orchestration | **Custom FSM** (no AG2, no LangGraph) | Maximum control, no framework opacity in security-critical paths |
 | LLM providers | **Thin Go interface** | ~200-300 lines per provider (Anthropic, Gemini, Ollama). No abstraction frameworks. |
-| Sandbox | **Docker or Podman** (TBD) | Behind an interface, not yet committed to a runtime |
+| Sandbox | **Docker** (Go SDK v28) | Ephemeral containers, network-isolated, all caps dropped, non-root |
 | Human interface | **Discord** (sidecar) | Status updates and commands. Not the control plane — the Go binary is. |
 | Observability | **Prometheus-style metrics** (planned) | Each component emits signals for dashboards and the Discord bot |
 
@@ -64,10 +64,12 @@ The Executor writes to `/out`, which is bind-mounted from a host temp directory.
 
 **Phase 3a (complete): Audit subprocess wiring.** `SubprocessGate` runner with fail-closed semantics, 4 gate factories (AST, secrets, schema validation, content scan), orchestrator stores agent outputs and passes real data through audit pipelines. 7 files, 524 lines added.
 
-**Phase 3b (in progress): Sandbox, audit persistence, and codebase awareness.**
-- *Container runtime (complete):* `DockerExecutor` using Docker Go SDK v28. Ephemeral containers with network=none, all capabilities dropped, non-root (UID 1000), memory/PID/CPU limits, bind-mounted `/out` for output artifacts, `stdcopy` log demuxing. CLI wires Docker with mock fallback. Orchestrator passes real coder output to executor. 14 unit tests, 5 integration tests.
-- *Audit record persistence (next):* Durable storage for gate verdicts and audit trails.
-- *Codebase-aware orchestration (next):* Mirror Cage — read-only host mirror, writable overlay, Working Set in Context Packet, patch-based auditing.
+**Phase 3b (complete): Sandbox, audit persistence, and codebase awareness.**
+- *Container runtime:* `DockerExecutor` using Docker Go SDK v28. Ephemeral containers with network=none, all capabilities dropped, non-root (UID 1000), memory/PID/CPU limits, bind-mounted `/out` for output artifacts, `stdcopy` log demuxing. CLI wires Docker with mock fallback. Orchestrator passes real coder output to executor. 14 unit tests, 5 integration tests.
+- *Audit record persistence:* SQLite-backed `task.Store` with schema migrations, audit gate verdicts, agent call recording, execution recording, and artifact relocation. CLI wired with `--db-path` flag.
+- *Codebase-aware orchestration (Mirror Cage):* Read-only host mirror, writable overlay, Working Set in Context Packet, patch-based auditing. Language detection with Go default.
+
+**Phase 3c (complete): Shadow Auditor.** Adversarial "Red Team" audit gate — generates PoC exploits against Coder output. Confirmed exploits route back to coding for remediation. Multi-file executor support. Wired into CLI and orchestrator pipeline.
 
 **Phase 4: Discord and observability.** Discord bot sidecar, Prometheus-style metrics, compute health monitoring, dashboard.
 
@@ -75,7 +77,6 @@ The Executor writes to `/out`, which is bind-mounted from a host temp directory.
 
 **Future / Post-v1 Ideas:**
 - **The Architect Roundtable:** Multi-model design loop (Claude, Gemini, Local) with a token-based protocol and Discord mirroring to eliminate the human "message bus" during ideation.
-- **Shadow Auditor (Adversarial Audit):** Final audit gate where a "Red Team" agent attempts to generate a working PoC exploit against the Coder's output. Falsifiable security: "prove the exploit or the finding is dismissed."
 - **Sovereign Local Cluster:** Expanding local compute to multiple nodes (e.g., dual NVIDIA/Khadas Mind nodes) for simultaneous reasoning and safety filtering.
 
 ## Where The Design Came From
@@ -85,4 +86,4 @@ The architecture was developed in a three-way discussion between the project own
 Key areas where Claude and Gemini diverged and how we resolved them:
 - **Context Packet rigidity:** Claude wanted strict typing everywhere; Gemini wanted a "Flexible Core." We went with Claude's strict schema — the `researcher_notes` field provides the escape hatch, explicitly tagged untrusted.
 - **Audit latency:** Gemini flagged that full 7-stage audits on every iteration could be slow. We acknowledged this as a future optimization (incremental auditing on diffs) but not phase 1.
-- **Framework choice:** The discussion assumed AG2/AutoGen. We decided on plain Python/Go with no framework — maximum control, no framework opacity.
+- **Framework choice:** The discussion assumed AG2/AutoGen. We decided on Go core with Python tooling and no framework — maximum control, no framework opacity.
