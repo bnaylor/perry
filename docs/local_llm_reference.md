@@ -1,9 +1,10 @@
-# Reference: Local LLM Cluster Configuration (Phase 2)
+# Reference: Local LLM Cluster Configuration
 
 **Last Updated:** March 2, 2026
+**Status:** Operational — end-to-end test flight completed successfully (2026-03-02)
 
 ## Hardware Profile: The "Perry Cluster"
-We use a **Dual-Node Local Cluster** to distribute the workload between code generation and adversarial auditing.
+We use a **Dual-Node Local Cluster** to distribute the workload between code generation and adversarial auditing. Both nodes have been verified with a full pipeline run from `SUBMITTED` through `COMPLETED`.
 
 ### Node 1: The "Heavy" ("diffuser", Linux box)
 - **IP:** `10.3.2.8`
@@ -60,9 +61,22 @@ PARAMETER temperature 0.2
 ```
 Then run: `ollama create perry-coder -f Modelfile`
 
+## Cloud Providers
+Both cloud providers are configured and verified with real API keys (stored in `./api_keys`, gitignored).
+
+| Provider | Env Var | Roles |
+| :--- | :--- | :--- |
+| **Gemini** | `GEMINI_API_KEY` | Strategist, Researcher, escalation target |
+| **Anthropic** | `ANTHROPIC_API_KEY` | Available for escalation / consultation |
+
+Source keys before running: `source ./api_keys`
+
 ## Deployment Checklist
 1. [x] Node 1: `ollama pull qwen3:14b`
 2. [x] Node 1: `ollama pull qwen2.5-coder:14b`
 3. [x] Node 2: `ollama pull deepseek-r1:14b`
-4. [x] Node 2: Configure `OLLAMA_HOST=0.0.0.0`.
-5. [x] **Verification:** Run `./bin/perry --models` and ensure all three providers respond.
+4. [x] Node 2: Configure `OLLAMA_HOST=0.0.0.0`
+5. [x] **Verification:** Run `./bin/perry --models` and ensure all three providers respond
+6. [x] Cloud: Gemini API key configured and verified
+7. [x] Cloud: Anthropic API key configured and verified
+8. [x] **End-to-end:** Full pipeline test flight (`SUBMITTED` → `COMPLETED`) with Mirror Cage, Shadow Auditor, and audit persistence — passed 2026-03-02
