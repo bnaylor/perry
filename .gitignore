@@ -9,7 +9,12 @@ __pycache__/
 .venv/
 .DS_Store
 .discord-coordination.json
-perry
+# Binaries
+bin/
+*.exe
+*.test
+*.out
+
 perry_debug.log
 tmp/
 api_keys
