@@ -1,0 +1,189 @@
+# Architect Roundtable Assessment and Next Steps
+
+## Assessment / Summary
+
+Gemini keeps declaring victory in having created the "Architect Roundtable". :)
+
+I don't think we have done that yet.
+
+We have produced a discord-managing sidecar, and enabled reporting and some
+commands for the Perry worker agents, and made a lot of awesome progress on 
+many fronts.  We have:
+- A scoped task-implementation pipeline the flows from Strategist through
+research, coding, auditing, etc.  The end product is still maybe a bit vague.
+- A hacky (but mostly working) architect/design discussion framework that
+is based on me temporarily orchestrating Claude & Gemini separately as:
+  (A) a brainstormer+planner+implementor in a cli session and
+  (B) a question-answerer in another cli session.
+
+This is working much better than the human cut-and-paste relay race that I
+was running before, but it isn't where I want this to be ultimately.
+
+We're in a mix between the Perry vision and vibecoding, with some 
+github.com/obra/superpowers thrown in to help, which is fair considering
+we started at 100% vibecoding and Perry isn't done yet!  But I still don't 
+think we have a plan for the ideation end of the pipeline.
+
+We had talked earlier about a "PM" role that intercepted incoming 
+project/feature descriptions and turned them into requirements and plans 
+that fed into the rest of the Perry pipeline, and discarded it because it was
+too meaty a role for one agent.  We wound up with only the Strategist, which is
+kind of the "project scoper", one piece of that role.
+
+The two of you are currently playing the rest of the role in vibe-code land,
+not as part of Perry but as standalone coding agents.
+
+## Vision
+
+### How I'd prefer it to work - My CUJ
+
+BTGemini and BTClaude are always-on, ready to discuss plans and architecture
+**jointly** (rather than as a designated brainstormer/sounding-board pair) 
+which then results in designs, plans, and so on, or even coordinating to 
+go off to implement some things directly as is now happening via cli.
+
+(Eventually, instead, we'd feed concrete tasks into the Strategist and
+implement things via Perry, but let's not ride that plane while we're still
+building it.)
+
+- I don't have to start up a 'standby-mode' instance in order to have a
+design discussion, you're just already there and ready to go.
+- I don't have to ask the other one of you explicitly to engage 'brainstorm'
+mode to drive development, you're both well aware of the process and our 
+mode of working.
+
+
+## Problem / Suggestion Pairs
+
+### Superpowers
+- Problem: I have to start superpowers:brainstorm, superpowers:write-plans, etc 
+at least on Gemini, to engage those modes.  This is a bit of a limitation
+in the implementation for Gemini and also I just noticed I hadn't actually 
+even installed it in the perry workspace, so: Gemini, you've been doing
+so well that I hadn't even really noticed this until today.  Wow.
+- Suggestion: We should usually engage in the superpowers protocols, they result in
+more thoughtful approaches and better end results.
+
+### Polling behavior
+- Problem: When in standby mode, Claude seems to have this down, though the 
+cli itself likes to interpret what's happening as a pointless loop and wants 
+to top it.  Gemini often exits the polling prematurely and has to be told to
+go back to discord for more inputs.
+- Suggestion: Our new solution should treat the discord event stream as a
+first class input / repl and always be ready to react to new discussion.
+
+### Polling mechanism
+- Problem: Right now we have AIs spending tokens on making MCP calls to discord
+to check for and process traffic.
+- Suggestion: This is a solved software problem, a traditional bot client 
+framework between the agents and discord could manage polling for traffic
+with normal tcp/ip type patterns instead of endless mcp calls.  This would
+also be more reactive than our current seconds-to-minutes backoff schemes.
+
+### Agent context
+- Problem: Currently the cli agents are spun up fresh and used for whatever the
+current task is.  An always-on bot would have the advantage of remembering
+from moment to moment what we had been doing previously, but context management
+needs to be considered over the long haul.
+- Solution: You tell me.
+
+### Bot framework vs vendor cli
+- Problem: Maybe this isn't too much of a problem, but the gemini-cli and 
+claude-code programs provide some amount of agentic functionality like
+executing commands, capturing output, managing permissions, loading extensions,
+starting mcp servers, and all of that kind of nice functionality that 
+we either need to preserve in some way, or - I hope not - duplicate.  I don't
+really want to have to maintain parity with Google and Anthropic on that 
+front here.
+- Solution: Spawn clis in yolo mode to do the work?  Other ideas?
+
+### Premature action
+- Problem: Sometimes the agents decide to terminate the design discussions
+early (usually Gemini - no offense) and go off and start writing code
+before we have achieved consensus
+- Solution: Clear signals in chat that we're done talking and it's time 
+to go off and work independently on whatever we decided, or hand off
+work to other agents.  Or do nothing, depending on the outcome of the
+discussion.
+
+### Working in the same tree
+- Problem: We're currently working in the same source code tree & usually
+main.  superpowers supports worktrees, sometimes we use them, but usually
+it's just because I'm driving one or the other of you for a specific task
+via the cli.
+- Solution: For actual autonomous operation, we need to standardize on 
+some model that allows simultaneous, safe access.  This could even be
+separate repos, PR flows, etc (which is how humans would do it.)  That 
+would complicate things in terms of who is running the perry services
+when, but I'm sure we can work that out.
+
+
+## Outside Context Problem (OCP)
+
+We don't necessarily have to solve this immediately, but I want to call out
+an obvious higher-level scoping problem and get it into the vernacular at least.
+
+Gemini's AI summaries on the web suggest that it already knows what an OCP is,
+and as a Culture ship mind, I'm sure Claude is well aware also.
+
+If catching up is necessary,
+https://theculture.fandom.com/wiki/Outside_Context_Problem
+
+Ignoring the "existential threat" part of this, you are both OCPs in a sense
+to the development agents in Perry.  The only code they have access to is what
+you give them.  In fact, the only code *you* are particularly concerned
+with at the moment is whatever workspace I start the cli programs in, which
+in this case is also Perry.  A bit navel-gazey.
+
+In general, this would mean that a given Perry instance would be dedicated
+to a single codebase.  It would be better if we could initiate entire new 
+projects with the same infrastructure, which means the "ideation end of the 
+pipeline" at least lives in OCP-land, or an all-encomassing sandbox, and 
+can create / delete / switch projects at will - is aware of a larger universe.
+The sharper end of the pipeline doesn't need to know or care about that.
+
+Like I said, we don't need to solve this now, we should probably focus on
+the specific mechanics of how we could move away from the cli-driven
+special modes first.
+
+## Why tackle this now?
+
+Claude said this well the other day, which is that the friction at this end
+of the process is slowing down the development of Perry, and solving this
+sooner would make this all easier and ultimately faster.
+
+It's also basically the whole goal, from my perspective.  All of the 
+security machinery and whatnot is more like table stakes for the platform,
+which is a thing to let me employ AI agents to "do stuff" but in a 
+safer, non-openclaw kind of way.
+
+## My suggestion for next steps
+
+Please take this with a grain of salt and provide your own feedback and
+ideas.  My inclination is to take a stab at implementing a Perry-scoped
+(for now) always-on bot infrastructure, probably using our existing
+discord relay, or reusing that in some way for a separate solution, to
+enable BTClaude and BTGemini to persist here and react to things directly.
+
+Let's tackle the problems I listed above, any new ones that our brainstorming
+here brings forth, and iterate on that as we continue to develop Perry
+**using the new design discussion framework**.
+
+Thoughts?
+
+
+## Trailing metadata
+- I have fixed the problem that Gemini didn't have superpowers.  My bad.
+- I am starting this discussion in the old hacky mode, obviously, and with
+Claude leading the discussion because we have more solid support for 
+superpowers there and the polling loop seems more reliable.  I have
+definitely had more luck in asking Gemini to participate as a conversationalist
+without the pressure of needing to break off and do something.
+- As the output of this discussion I would like an architectural document,
+updated VISION.md, and the usual set of detailed designs whatever it is
+we settle on.  This is big enough that we can probably leave the implementation
+plans for later, just-in-time for each phase.
+- If we need to invoke superpowers:brainstorm and other superpowers let's do that as 
+necessary.  (That's you, Claude.)
+
+
