@@ -16,11 +16,11 @@ defaults:
   strategist:
     tier: cloud
     provider: cloud-gemini
-    model: "gemini-3-flash-preview"
+    model: "gemini-3.1-flash-lite"
   researcher:
     tier: cloud
     provider: cloud-gemini
-    model: "gemini-3-flash-preview"
+    model: "gemini-3.1-flash-lite"
   coder:
     tier: local
     provider: local-cuda
@@ -40,3 +40,8 @@ escalation:
     tier: cloud
     provider: cloud-gemini
     model: "gemini-3.1-pro-preview"
+
+fallback:
+  tier: local
+  provider: local-cuda
+  model: "qwen3:14b"

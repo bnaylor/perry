@@ -3,7 +3,9 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/bnaylor/perry/internal/llm"
 	"github.com/bnaylor/perry/internal/task"
 )
 
@@ -34,6 +36,8 @@ type Config struct {
 	Providers  []ProviderInstanceConfig `yaml:"providers"`
 	Defaults   map[string]RouteConfig   `yaml:"defaults"`
 	Escalation EscalationConfig         `yaml:"escalation"`
+	// Fallback is the local tier to use if cloud cost is too high.
+	Fallback RouteConfig `yaml:"fallback"`
 }
 
 // Decision is the routing result.
@@ -81,4 +85,45 @@ func (d *Dispatcher) Route(_ context.Context, tk *task.Task, role string) (Decis
 		Model:    defaults.Model,
 		Reason:   "default routing",
 	}, nil
+}
+
+// RouteWithCost applies cost-based fallback logic before choosing a provider.
+func (d *Dispatcher) RouteWithCost(ctx context.Context, tk *task.Task, role string, inputTokens int, maxCost float64) (Decision, error) {
+	decision, err := d.Route(ctx, tk, role)
+	if err != nil {
+		return decision, err
+	}
+
+	// Only apply cost fallback if we're currently routed to cloud.
+	if decision.Tier != "cloud" {
+		return decision, nil
+	}
+
+	// Estimate cost (assume output is 25% of input)
+	outputTokens := inputTokens / 4
+	cost, err := llm.EstimateCost(decision.Model, inputTokens, outputTokens)
+	if err != nil {
+		// If we can't estimate cost, stick with the original decision but log a warning.
+		return decision, nil
+	}
+
+	// If cost is > 80% of total budget, or if the role is "easy" (auditor/researcher)
+	// and cost is > $0.10, fallback to local.
+	isEasyRole := strings.Contains(role, "auditor") || strings.Contains(role, "researcher")
+	
+	shouldFallback := cost > (maxCost * 0.8)
+	if !shouldFallback && isEasyRole && cost > 0.10 {
+		shouldFallback = true
+	}
+
+	if shouldFallback && d.config.Fallback.Provider != "" {
+		return Decision{
+			Tier:     d.config.Fallback.Tier,
+			Provider: d.config.Fallback.Provider,
+			Model:    d.config.Fallback.Model,
+			Reason:   fmt.Sprintf("cost fallback (est. $%.4f > threshold)", cost),
+		}, nil
+	}
+
+	return decision, nil
 }

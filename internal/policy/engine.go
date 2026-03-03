@@ -82,3 +82,8 @@ func (e *Engine) CheckProhibitedImports(imports []string) []string {
 	}
 	return violations
 }
+
+// MaxCost returns the configured maximum cost per task.
+func (e *Engine) MaxCost() float64 {
+	return e.config.MaxCostPerTask
+}

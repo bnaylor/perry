@@ -17,11 +17,12 @@ func (s *Store) RecordTransition(taskID, from, to, reason string) error {
 	return nil
 }
 
-// RecordExecution inserts a container execution result into the transitions table.
+// RecordExecution inserts a container execution result as a metadata entry in the transitions table.
+// It uses an empty to_state to signify this is a result record, not a state transition.
 func (s *Store) RecordExecution(taskID string, exitCode int, logs, artifactPath string) error {
 	_, err := s.db.Exec(
 		`INSERT INTO transitions (task_id, from_state, to_state, reason, exit_code, logs, artifact_path)
-		 VALUES (?, 'EXECUTING', '', 'execution result', ?, ?, ?)`,
+		 VALUES (?, 'EXECUTING', 'EXECUTION_RESULT', 'execution result', ?, ?, ?)`,
 		taskID, exitCode, logs, artifactPath,
 	)
 	if err != nil {

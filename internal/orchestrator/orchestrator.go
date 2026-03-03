@@ -165,11 +165,12 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		return task.StatePlanning, "auto", nil
 
 	case task.StatePlanning:
-		decision, err := o.dispatcher.Route(ctx, tk, string(agent.RoleStrategist))
+		input := tk.Description
+		decision, err := o.dispatcher.RouteWithCost(ctx, tk, string(agent.RoleStrategist), len(input)/4, o.policy.MaxCost())
 		if err != nil {
 			return task.StateHumanReview, "routing error", nil
 		}
-		output, err := o.runner.Execute(ctx, tk, agent.RoleStrategist, tk.Description, decision)
+		output, err := o.runner.Execute(ctx, tk, agent.RoleStrategist, input, decision)
 		if err != nil {
 			slog.Error("strategist failed", "error", err)
 			return task.StateHumanReview, "strategist error", nil
@@ -181,7 +182,9 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		return task.StateResearching, "requirements ready", nil
 
 	case task.StateResearching:
-		decision, err := o.dispatcher.Route(ctx, tk, string(agent.RoleResearcher))
+		researchInput := "gather context"
+		// Try to estimate input size from current description + working set
+		decision, err := o.dispatcher.RouteWithCost(ctx, tk, string(agent.RoleResearcher), len(tk.Description)/4, o.policy.MaxCost())
 		if err != nil {
 			return "", "", fmt.Errorf("routing failed: %w", err)
 		}
@@ -201,7 +204,6 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		}
 
 		// If working set is identified, take a codebase snapshot and read file contents
-		researchInput := "gather context"
 		if len(workingSet) > 0 {
 			snapshot, err := codebase.TakeSnapshot(workingSet)
 			if err != nil {
@@ -261,21 +263,33 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			if recErr := o.store.RecordAuditGate(tk.ID, "packet", gr.Gate, gr.Pass, gr.Findings); recErr != nil {
 				slog.Warn("failed to record audit gate", "error", recErr)
 			}
-			if !gr.Pass && len(gr.Findings) > 0 {
-				slog.Warn("packet validation findings", "gate", gr.Gate, "findings", gr.Findings)
-			}
 		}
 		if result.Verdict != audit.VerdictApprove {
+			// Check for infinite loops in packet validation
+			if tk.RetryCount(task.StatePacketValidation, task.StateResearching) >= 3 {
+				return task.StateHumanReview, "too many packet validation failures", nil
+			}
 			return task.StateResearching, "packet rejected, re-research needed", nil
 		}
 		return task.StateCoding, "packet validated", nil
 
 	case task.StateCoding:
-		decision, err := o.dispatcher.Route(ctx, tk, string(agent.RoleCoder))
+		// Retrieve Context Packet from Researcher for Coder
+		coderInput := "generate code"
+		packetBytes := []byte("{}")
+		if resOutput, ok := o.outputs[outputKey(tk.ID, agent.RoleResearcher)]; ok {
+			if b, err := json.Marshal(resOutput.Parsed); err == nil {
+				packetBytes = b
+				coderInput = fmt.Sprintf("generate code using this context packet: %s", string(packetBytes))
+			}
+		}
+
+		decision, err := o.dispatcher.RouteWithCost(ctx, tk, string(agent.RoleCoder), len(packetBytes)/4, o.policy.MaxCost())
 		if err != nil {
 			return "", "", fmt.Errorf("routing failed: %w", err)
 		}
-		output, err := o.runner.Execute(ctx, tk, agent.RoleCoder, "generate code", decision)
+
+		output, err := o.runner.Execute(ctx, tk, agent.RoleCoder, coderInput, decision)
 		if err != nil {
 			return "", "", fmt.Errorf("coder failed: %w", err)
 		}
@@ -325,11 +339,6 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		}
 
 	case task.StateShadowAuditing:
-		decision, err := o.dispatcher.Route(ctx, tk, string(agent.RoleShadowAuditor))
-		if err != nil {
-			return task.StateHumanReview, "routing error", nil
-		}
-
 		// Grab code to send to the auditor
 		code := "placeholder"
 		if coderOutput, ok := o.outputs[outputKey(tk.ID, agent.RoleCoder)]; ok {
@@ -341,6 +350,11 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			if code == "placeholder" {
 				code = coderOutput.Content
 			}
+		}
+
+		decision, err := o.dispatcher.RouteWithCost(ctx, tk, string(agent.RoleShadowAuditor), len(code)/4, o.policy.MaxCost())
+		if err != nil {
+			return task.StateHumanReview, "routing error", nil
 		}
 
 		output, err := o.runner.Execute(ctx, tk, agent.RoleShadowAuditor, "find vulnerabilities in: "+code, decision)

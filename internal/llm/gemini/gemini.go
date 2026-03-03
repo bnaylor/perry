@@ -50,6 +50,7 @@ type (
 	generationConfig struct {
 		MaxOutputTokens int     `json:"maxOutputTokens,omitempty"`
 		Temperature     float64 `json:"temperature,omitempty"`
+		ThinkingLevel   string  `json:"thinking_level,omitempty"`
 	}
 
 	geminiResponse struct {
@@ -89,11 +90,14 @@ func (p *Provider) Complete(ctx context.Context, req llm.CompletionRequest) (llm
 		})
 	}
 
-	// Set generation config if temperature or max tokens specified.
-	if req.Temperature != 0 || req.MaxTokens != 0 {
+	// Set generation config if temperature, max tokens, or thinking level specified.
+	if req.Temperature != 0 || req.MaxTokens != 0 || req.Extras["thinking_level"] != nil {
 		greq.GenerationConfig = &generationConfig{
 			Temperature:     req.Temperature,
 			MaxOutputTokens: req.MaxTokens,
+		}
+		if tl, ok := req.Extras["thinking_level"].(string); ok {
+			greq.GenerationConfig.ThinkingLevel = tl
 		}
 	}
 

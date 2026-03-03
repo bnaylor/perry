@@ -19,7 +19,7 @@ func TestGeminiIntegration(t *testing.T) {
 	}
 	p := New(key)
 	resp, err := p.Complete(context.Background(), llm.CompletionRequest{
-		Model:    "gemini-2.0-flash",
+		Model:    "gemini-3-flash",
 		Messages: []llm.Message{{Role: "user", Content: "Reply with exactly: INTEGRATION_OK"}},
 	})
 	require.NoError(t, err)
