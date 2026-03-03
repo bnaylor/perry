@@ -10,6 +10,12 @@
     - **Sub-task Completion:** After finishing a discrete part of a larger plan (e.g., updating a provider, then committing before moving to the orchestrator).
     - **Configuration Updates:** After modifying core routing or policy files (`configs/*.yaml`).
 - **Atomic Changes:** Keep commits focused. Do not mix unrelated changes (e.g., don't commit a feature update and a documentation fix together unless they are strictly coupled).
+- **Root Cause Resolution:** When addressing bugs or architectural issues, **PRIORITIZE** fixing the root cause over applying band-aids to the symptoms. If you identify a structural flaw, propose a permanent fix even if it requires more effort. 
+    - *Caveat:* If the user explicitly requests a "quick fix" or "temporary band-aid" due to time constraints, implement it but add a corresponding entry to `docs/tech-debt.md` to ensure the root cause is eventually addressed.
+- **Style:** Use Conventional Commits formatting.
+- **Self-Evolution:** Add new items to this file as lessons are learned during development.
+
+- **Atomic Changes:** Keep commits focused. Do not mix unrelated changes (e.g., don't commit a feature update and a documentation fix together unless they are strictly coupled).
 - **Style:** Use Conventional Commits formatting.
 - **Self-Evolution:** Add new items to this file as lessons are learned during development.
 
