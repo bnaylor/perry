@@ -8,6 +8,8 @@ type Config struct {
 	ProhibitedImports   []string `yaml:"prohibited_imports"`
 	MaxTokensPerTask    int      `yaml:"max_tokens_per_task"`
 	MaxCostPerTask      float64  `yaml:"max_cost_per_task"`
+	MaxDailyBudget      float64  `yaml:"max_daily_budget"`
+	MaxMonthlyBudget    float64  `yaml:"max_monthly_budget"`
 }
 
 // Decision is the result of a policy check.
@@ -86,4 +88,14 @@ func (e *Engine) CheckProhibitedImports(imports []string) []string {
 // MaxCost returns the configured maximum cost per task.
 func (e *Engine) MaxCost() float64 {
 	return e.config.MaxCostPerTask
+}
+
+// MaxDailyBudget returns the configured maximum daily budget.
+func (e *Engine) MaxDailyBudget() float64 {
+	return e.config.MaxDailyBudget
+}
+
+// MaxMonthlyBudget returns the configured maximum monthly budget.
+func (e *Engine) MaxMonthlyBudget() float64 {
+	return e.config.MaxMonthlyBudget
 }

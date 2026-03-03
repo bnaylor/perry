@@ -9,11 +9,23 @@ const (
 	VerdictEscalate Verdict = "ESCALATE"
 )
 
+// FailureReason categorizes why an audit might have failed.
+type FailureReason string
+
+const (
+	ReasonNone           FailureReason = ""
+	ReasonModelIncapable FailureReason = "model_incapable"
+	ReasonInvalidInput   FailureReason = "invalid_input"
+	ReasonSystemError    FailureReason = "system_error"
+	ReasonPolicyViolation FailureReason = "policy_violation"
+)
+
 // GateResult is the outcome of a single audit gate.
 type GateResult struct {
-	Pass     bool     `json:"pass"`
-	Gate     string   `json:"gate"`
-	Findings []string `json:"findings,omitempty"`
+	Pass          bool          `json:"pass"`
+	Gate          string        `json:"gate"`
+	Findings      []string      `json:"findings,omitempty"`
+	FailureReason FailureReason `json:"failure_reason,omitempty"`
 }
 
 // AuditInput is what gets fed into the audit pipeline.
@@ -26,6 +38,7 @@ type AuditInput struct {
 
 // AuditResult is the complete audit outcome.
 type AuditResult struct {
-	Verdict     Verdict
-	GateResults []GateResult
+	Verdict       Verdict
+	GateResults   []GateResult
+	FailureReason FailureReason
 }

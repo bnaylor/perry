@@ -55,48 +55,51 @@ func TestStore_RecordAuditGate(t *testing.T) {
 	s := newTestStore(t)
 	tk := createTestTask(t, s)
 
-	err := s.RecordAuditGate(tk.ID, "code", "ast", true, nil)
+	err := s.RecordAuditGate(tk.ID, "code", "ast", true, nil, "")
 	require.NoError(t, err)
 
-	err = s.RecordAuditGate(tk.ID, "code", "secrets", false, []string{"hardcoded password on line 5"})
+	err = s.RecordAuditGate(tk.ID, "code", "secrets", false, []string{"hardcoded password on line 5"}, "policy_violation")
 	require.NoError(t, err)
 
 	// Verify
-	rows, err := s.db.Query(`SELECT pipeline, gate, pass, findings FROM audit_records WHERE task_id = ? ORDER BY id`, tk.ID)
+	rows, err := s.db.Query(`SELECT pipeline, gate, pass, findings, failure_reason FROM audit_records WHERE task_id = ? ORDER BY id`, tk.ID)
 	require.NoError(t, err)
 	defer rows.Close()
 
 	type record struct {
-		pipeline, gate, findings string
-		pass                     bool
+		pipeline, gate, findings, failureReason string
+		pass                                    bool
 	}
 	var records []record
 	for rows.Next() {
 		var r record
-		require.NoError(t, rows.Scan(&r.pipeline, &r.gate, &r.pass, &r.findings))
+		require.NoError(t, rows.Scan(&r.pipeline, &r.gate, &r.pass, &r.findings, &r.failureReason))
 		records = append(records, r)
 	}
 	require.Len(t, records, 2)
 	assert.True(t, records[0].pass)
 	assert.False(t, records[1].pass)
 	assert.Contains(t, records[1].findings, "hardcoded password")
+	assert.Equal(t, "policy_violation", records[1].failureReason)
 }
 
 func TestStore_RecordAgentCall(t *testing.T) {
 	s := newTestStore(t)
 	tk := createTestTask(t, s)
 
-	err := s.RecordAgentCall(tk.ID, "coder", "anthropic", "claude-sonnet-4-20250514", 500, 1200, `{"code": "print('hello')"}`)
+	err := s.RecordAgentCall(tk.ID, "coder", "anthropic", "claude-3-7-sonnet-20260219", 500, 1200, `{"code": "print('hello')"}`)
 	require.NoError(t, err)
 
 	var role, provider, model, content string
 	var inputTokens, outputTokens int
-	row := s.db.QueryRow(`SELECT role, provider, model, input_tokens, output_tokens, content FROM agent_calls WHERE task_id = ?`, tk.ID)
-	require.NoError(t, row.Scan(&role, &provider, &model, &inputTokens, &outputTokens, &content))
+	var cost float64
+	row := s.db.QueryRow(`SELECT role, provider, model, input_tokens, output_tokens, content, cost FROM agent_calls WHERE task_id = ?`, tk.ID)
+	require.NoError(t, row.Scan(&role, &provider, &model, &inputTokens, &outputTokens, &content, &cost))
 	assert.Equal(t, "coder", role)
 	assert.Equal(t, "anthropic", provider)
-	assert.Equal(t, "claude-sonnet-4-20250514", model)
+	assert.Equal(t, "claude-3-7-sonnet-20260219", model)
 	assert.Equal(t, 500, inputTokens)
 	assert.Equal(t, 1200, outputTokens)
 	assert.Contains(t, content, "print('hello')")
+	assert.Greater(t, cost, 0.0)
 }

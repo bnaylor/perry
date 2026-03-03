@@ -166,7 +166,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 
 	case task.StatePlanning:
 		input := tk.Description
-		decision, err := o.dispatcher.RouteWithCost(ctx, tk, string(agent.RoleStrategist), len(input)/4, o.policy.MaxCost())
+		decision, err := o.dispatcher.RouteWithFilters(ctx, tk, string(agent.RoleStrategist), len(input)/4)
 		if err != nil {
 			return task.StateHumanReview, "routing error", nil
 		}
@@ -184,7 +184,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 	case task.StateResearching:
 		researchInput := "gather context"
 		// Try to estimate input size from current description + working set
-		decision, err := o.dispatcher.RouteWithCost(ctx, tk, string(agent.RoleResearcher), len(tk.Description)/4, o.policy.MaxCost())
+		decision, err := o.dispatcher.RouteWithFilters(ctx, tk, string(agent.RoleResearcher), len(tk.Description)/4)
 		if err != nil {
 			return "", "", fmt.Errorf("routing failed: %w", err)
 		}
@@ -260,11 +260,14 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			return task.StateHumanReview, "packet audit error", nil
 		}
 		for _, gr := range result.GateResults {
-			if recErr := o.store.RecordAuditGate(tk.ID, "packet", gr.Gate, gr.Pass, gr.Findings); recErr != nil {
+			if recErr := o.store.RecordAuditGate(tk.ID, "packet", gr.Gate, gr.Pass, gr.Findings, string(gr.FailureReason)); recErr != nil {
 				slog.Warn("failed to record audit gate", "error", recErr)
 			}
 		}
 		if result.Verdict != audit.VerdictApprove {
+			if result.FailureReason == audit.ReasonModelIncapable {
+				return task.StateHumanReview, "packet rejected: model incapable", nil
+			}
 			// Check for infinite loops in packet validation
 			if tk.RetryCount(task.StatePacketValidation, task.StateResearching) >= 3 {
 				return task.StateHumanReview, "too many packet validation failures", nil
@@ -284,7 +287,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			}
 		}
 
-		decision, err := o.dispatcher.RouteWithCost(ctx, tk, string(agent.RoleCoder), len(packetBytes)/4, o.policy.MaxCost())
+		decision, err := o.dispatcher.RouteWithFilters(ctx, tk, string(agent.RoleCoder), len(packetBytes)/4)
 		if err != nil {
 			return "", "", fmt.Errorf("routing failed: %w", err)
 		}
@@ -325,7 +328,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			return task.StateHumanReview, "audit error", nil
 		}
 		for _, gr := range result.GateResults {
-			if recErr := o.store.RecordAuditGate(tk.ID, "code", gr.Gate, gr.Pass, gr.Findings); recErr != nil {
+			if recErr := o.store.RecordAuditGate(tk.ID, "code", gr.Gate, gr.Pass, gr.Findings, string(gr.FailureReason)); recErr != nil {
 				slog.Warn("failed to record audit gate", "error", recErr)
 			}
 		}
@@ -333,6 +336,9 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 		case audit.VerdictApprove:
 			return task.StateShadowAuditing, "audit passed", nil
 		case audit.VerdictReject:
+			if result.FailureReason == audit.ReasonModelIncapable {
+				return task.StateHumanReview, "audit rejected: model incapable", nil
+			}
 			return task.StateCoding, "audit rejected, revision needed", nil
 		default:
 			return task.StateHumanReview, "audit escalated", nil
@@ -352,7 +358,7 @@ func (o *Orchestrator) determineNextState(ctx context.Context, tk *task.Task) (t
 			}
 		}
 
-		decision, err := o.dispatcher.RouteWithCost(ctx, tk, string(agent.RoleShadowAuditor), len(code)/4, o.policy.MaxCost())
+		decision, err := o.dispatcher.RouteWithFilters(ctx, tk, string(agent.RoleShadowAuditor), len(code)/4)
 		if err != nil {
 			return task.StateHumanReview, "routing error", nil
 		}

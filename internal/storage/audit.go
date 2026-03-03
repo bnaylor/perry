@@ -3,6 +3,8 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/bnaylor/perry/internal/llm"
 )
 
 // RecordTransition inserts a state transition entry into the transitions table.
@@ -18,7 +20,6 @@ func (s *Store) RecordTransition(taskID, from, to, reason string) error {
 }
 
 // RecordExecution inserts a container execution result as a metadata entry in the transitions table.
-// It uses an empty to_state to signify this is a result record, not a state transition.
 func (s *Store) RecordExecution(taskID string, exitCode int, logs, artifactPath string) error {
 	_, err := s.db.Exec(
 		`INSERT INTO transitions (task_id, from_state, to_state, reason, exit_code, logs, artifact_path)
@@ -33,14 +34,14 @@ func (s *Store) RecordExecution(taskID string, exitCode int, logs, artifactPath 
 
 // RecordAuditGate inserts an audit gate result into the audit_records table.
 // findings may be nil (pass with no notes) or a slice of human-readable finding strings.
-func (s *Store) RecordAuditGate(taskID, pipeline, gate string, pass bool, findings []string) error {
+func (s *Store) RecordAuditGate(taskID, pipeline, gate string, pass bool, findings []string, failureReason string) error {
 	findingsJSON, err := json.Marshal(findings)
 	if err != nil {
 		return fmt.Errorf("marshal findings: %w", err)
 	}
 	_, err = s.db.Exec(
-		`INSERT INTO audit_records (task_id, pipeline, gate, pass, findings) VALUES (?, ?, ?, ?, ?)`,
-		taskID, pipeline, gate, pass, string(findingsJSON),
+		`INSERT INTO audit_records (task_id, pipeline, gate, pass, findings, failure_reason) VALUES (?, ?, ?, ?, ?, ?)`,
+		taskID, pipeline, gate, pass, string(findingsJSON), failureReason,
 	)
 	if err != nil {
 		return fmt.Errorf("record audit gate: %w", err)
@@ -50,10 +51,11 @@ func (s *Store) RecordAuditGate(taskID, pipeline, gate string, pass bool, findin
 
 // RecordAgentCall inserts an LLM agent invocation record into the agent_calls table.
 func (s *Store) RecordAgentCall(taskID, role, provider, model string, inputTokens, outputTokens int, content string) error {
+	cost, _ := llm.EstimateCost(model, inputTokens, outputTokens)
 	_, err := s.db.Exec(
-		`INSERT INTO agent_calls (task_id, role, provider, model, input_tokens, output_tokens, content)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		taskID, role, provider, model, inputTokens, outputTokens, content,
+		`INSERT INTO agent_calls (task_id, role, provider, model, input_tokens, output_tokens, content, cost)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		taskID, role, provider, model, inputTokens, outputTokens, content, cost,
 	)
 	if err != nil {
 		return fmt.Errorf("record agent call: %w", err)

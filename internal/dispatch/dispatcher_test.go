@@ -76,24 +76,26 @@ func TestRouteUnknownRole(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestRouteWithCostFallback(t *testing.T) {
-	d := New(defaultConfig())
+func TestRouteWithCostFilter(t *testing.T) {
+	cfg := defaultConfig()
+	f := &CostFilter{MaxTaskCost: 10.0, Fallback: cfg.Fallback}
+	d := New(cfg, f)
 	tk := task.New("test", "user-1")
 
 	// Large research task triggering cost fallback (> $0.10)
-	decision, err := d.RouteWithCost(context.Background(), tk, "researcher", 400000, 10.0)
+	decision, err := d.RouteWithFilters(context.Background(), tk, "researcher", 400000)
 	require.NoError(t, err)
 	assert.Equal(t, "local", decision.Tier)
 	assert.Equal(t, "ollama", decision.Provider)
 	assert.Contains(t, decision.Reason, "cost fallback")
 }
 
-func TestRouteWithCostNoFallback(t *testing.T) {
+func TestRouteWithNoFilter(t *testing.T) {
 	d := New(defaultConfig())
 	tk := task.New("test", "user-1")
 
 	// Small researcher task ($0.005)
-	decision, err := d.RouteWithCost(context.Background(), tk, "researcher", 10000, 10.0)
+	decision, err := d.RouteWithFilters(context.Background(), tk, "researcher", 10000)
 	require.NoError(t, err)
 	assert.Equal(t, "cloud", decision.Tier)
 	assert.Equal(t, "google", decision.Provider)

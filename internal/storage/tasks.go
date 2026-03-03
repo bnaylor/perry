@@ -144,3 +144,16 @@ func (s *Store) List(ctx context.Context) ([]*task.Task, error) {
 
 	return tasks, nil
 }
+
+// TotalSpend returns the aggregate cost of agent calls within the given time window.
+func (s *Store) TotalSpend(ctx context.Context, start, end time.Time) (float64, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(SUM(cost), 0.0) FROM agent_calls WHERE created_at >= ? AND created_at <= ?`,
+		start, end,
+	)
+	var total float64
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("calculate total spend: %w", err)
+	}
+	return total, nil
+}

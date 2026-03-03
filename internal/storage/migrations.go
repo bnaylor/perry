@@ -1,6 +1,6 @@
 package storage
 
-const currentVersion = 2
+const currentVersion = 3
 
 var migrations = map[int]string{
 	1: `
@@ -71,5 +71,18 @@ CREATE TABLE IF NOT EXISTS commands (
 );
 
 ALTER TABLE tasks ADD COLUMN discord_thread_id TEXT;
+`,
+	3: `
+ALTER TABLE agent_calls ADD COLUMN cost REAL NOT NULL DEFAULT 0.0;
+ALTER TABLE audit_records ADD COLUMN failure_reason TEXT;
+
+CREATE TABLE IF NOT EXISTS billing_cycles (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	name       TEXT NOT NULL, -- e.g. "March 2026"
+	start_date TIMESTAMP NOT NULL,
+	end_date   TIMESTAMP NOT NULL,
+	max_budget REAL NOT NULL,
+	current_spend REAL NOT NULL DEFAULT 0.0
+);
 `,
 }

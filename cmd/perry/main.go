@@ -31,17 +31,54 @@ func main() {
 	// Parse flags
 	dbPath := flag.String("db-path", ".perry/perry.db", "path to SQLite database")
 	listModels := flag.Bool("models", false, "list available models from all providers and exit")
+	showBilling := flag.Bool("bill", false, "show current billing cycle spend and exit")
 	flag.Parse()
 
-	// Load config
-	routingCfg, err := config.LoadRoutingConfig("configs/routing.yaml")
-	if err != nil {
-		slog.Error("failed to load routing config", "error", err)
+	// Open storage (needed for billing check too)
+	if err := os.MkdirAll(filepath.Dir(*dbPath), 0755); err != nil {
+		slog.Error("failed to create database directory", "error", err)
 		os.Exit(1)
 	}
+	store, err := storage.NewStore(*dbPath)
+	if err != nil {
+		slog.Error("failed to open storage", "error", err)
+		os.Exit(1)
+	}
+	defer store.Close()
+
+	// Load policy (needed for budget thresholds)
 	policyCfg, err := config.LoadPolicyConfig("configs/policy.yaml")
 	if err != nil {
 		slog.Error("failed to load policy config", "error", err)
+		os.Exit(1)
+	}
+	policyEngine := policy.NewEngine(policyCfg)
+
+	if *showBilling {
+		billing := audit.NewBillingAuditor(store)
+		daily, monthly, err := billing.CheckBudgetStatus(ctx)
+		if err != nil {
+			slog.Error("failed to fetch billing status", "error", err)
+			os.Exit(1)
+		}
+		fmt.Println("Perry: Billing & Cognitive Logistics")
+		fmt.Println("====================================")
+		fmt.Printf("Daily Spend:   $%7.4f / $%7.4f (%.1f%%)\n", daily, policyEngine.MaxDailyBudget(), (daily/policyEngine.MaxDailyBudget())*100)
+		fmt.Printf("Monthly Spend: $%7.4f / $%7.4f (%.1f%%)\n", monthly, policyEngine.MaxMonthlyBudget(), (monthly/policyEngine.MaxMonthlyBudget())*100)
+		
+		health, _ := billing.AssessHealth(ctx, policyEngine.MaxDailyBudget(), policyEngine.MaxMonthlyBudget())
+		status := "HEALTHY"
+		if !health.IsHealthy {
+			status = "WARNING: AGGRESSIVE LOCAL ROUTING ACTIVE"
+		}
+		fmt.Printf("System Status: %s\n", status)
+		os.Exit(0)
+	}
+
+	// Load routing
+	routingCfg, err := config.LoadRoutingConfig("configs/routing.yaml")
+	if err != nil {
+		slog.Error("failed to load routing config", "error", err)
 		os.Exit(1)
 	}
 
@@ -67,7 +104,7 @@ func main() {
 
 	// Get task description from remaining args
 	if flag.NArg() < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: perry [--db-path path] [--models] <task description>\n")
+		fmt.Fprintf(os.Stderr, "Usage: perry [--db-path path] [--models] [--bill] <task description>\n")
 		os.Exit(1)
 	}
 	taskDesc := flag.Arg(0)
@@ -107,24 +144,19 @@ func main() {
 		exec = executor.NewDockerExecutor(dockerClient, "python:3.12-slim", executor.DefaultSandboxLimits())
 	}
 
-	// Open storage
-	if err := os.MkdirAll(filepath.Dir(*dbPath), 0755); err != nil {
-		slog.Error("failed to create database directory", "error", err)
-		os.Exit(1)
-	}
-	store, err := storage.NewStore(*dbPath)
-	if err != nil {
-		slog.Error("failed to open storage", "error", err)
-		os.Exit(1)
-	}
-	defer store.Close()
+	// Build Dispatcher with Filters
+	billingAuditor := audit.NewBillingAuditor(store)
+	dispatcher := dispatch.New(routingCfg,
+		&dispatch.CostFilter{MaxTaskCost: policyEngine.MaxCost(), Fallback: routingCfg.Fallback},
+		&dispatch.BudgetHealthFilter{Billing: billingAuditor, Policy: policyEngine, Fallback: routingCfg.Fallback},
+	)
 
 	orch := orchestrator.NewOrchestrator(orchestrator.Config{
 		FSM:         fsmMachine,
 		Store:       store,
 		Runner:      agent.NewRunner(agents, providerMap),
-		Dispatcher:  dispatch.New(routingCfg),
-		Policy:      policy.NewEngine(policyCfg),
+		Dispatcher:  dispatcher,
+		Policy:      policyEngine,
 		Audit:       codePipeline,
 		PacketAudit: packetPipeline,
 		Executor:    exec,
