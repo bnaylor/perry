@@ -208,17 +208,18 @@ func pollAgentCalls(ctx context.Context, store *storage.Store, client discord.Se
 	cursorStr, err := store.GetInternalState(ctx, cursorCallsKey)
 	if err != nil {
 		slog.Error("failed to get agent calls cursor", "error", err)
-		return
-	}
-	cursor, _ := strconv.ParseInt(cursorStr, 10, 64)
+	case agent.RoleShadowAuditor:
+		if found, ok := data["vulnerability_found"].(bool); ok {
+			backstory := ""
+			if bs, ok := data["backstory"].(string); ok {
+				backstory = "\n\n**Backstory:** " + bs
+			}
 
-	records, err := store.GetAgentCallsSince(ctx, cursor)
-	if err != nil {
-		slog.Error("failed to get agent calls", "error", err)
-		return
-	}
-
-	for _, r := range records {
+			if found {
+				return "🚨 **Vulnerability identified!**" + backstory
+			}
+			return "No vulnerabilities found in this sweep." + backstory
+		}
 		slog.Info("processing agent call", "id", r.ID, "task", r.TaskID, "role", r.Role)
 		tk, err := store.Get(ctx, r.TaskID)
 		if err != nil {
