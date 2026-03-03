@@ -91,18 +91,21 @@ func (s *Store) UpdateCommandStatus(ctx context.Context, id int64, status string
 
 // TransitionRecord matches the database 'transitions' table.
 type TransitionRecord struct {
-	ID        int64
-	TaskID    string
-	FromState string
-	ToState   string
-	Reason    string
-	CreatedAt time.Time
+	ID           int64
+	TaskID       string
+	FromState    string
+	ToState      string
+	Reason       string
+	ExitCode     sql.NullInt64
+	Logs         sql.NullString
+	ArtifactPath sql.NullString
+	CreatedAt    time.Time
 }
 
 // GetTransitionsSince returns all transitions with an ID greater than the given cursor.
 func (s *Store) GetTransitionsSince(ctx context.Context, cursor int64) ([]TransitionRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT id, task_id, from_state, to_state, reason, created_at FROM transitions WHERE id > ? ORDER BY id",
+		"SELECT id, task_id, from_state, to_state, reason, exit_code, logs, artifact_path, created_at FROM transitions WHERE id > ? ORDER BY id",
 		cursor)
 	if err != nil {
 		return nil, fmt.Errorf("get transitions since %d: %w", cursor, err)
@@ -112,7 +115,7 @@ func (s *Store) GetTransitionsSince(ctx context.Context, cursor int64) ([]Transi
 	var records []TransitionRecord
 	for rows.Next() {
 		var r TransitionRecord
-		if err := rows.Scan(&r.ID, &r.TaskID, &r.FromState, &r.ToState, &r.Reason, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.TaskID, &r.FromState, &r.ToState, &r.Reason, &r.ExitCode, &r.Logs, &r.ArtifactPath, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan transition: %w", err)
 		}
 		records = append(records, r)

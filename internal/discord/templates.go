@@ -28,6 +28,8 @@ var templates = map[string]string{
 
 	"agent_call": "**{{.Persona}}** ({{.Role}}):\n{{.Content}}",
 
+	"execution_result": "🛠️ **Execution Result**\n> {{.Reason}}\n**Logs:**\n```\n{{.Content}}\n```",
+
 	"audit_rejection": "⚠️ **Audit Rejected by {{.Persona}}**\nThe code failed the security gates.\n**Findings:**\n{{.Findings}}",
 
 	"completion": "✅ **Mission Accomplished!**\nTask `{{.TaskID}}` has been successfully completed.\n*Curse you, Perry the Platypus!*",
@@ -57,6 +59,9 @@ func Format(templateName string, data EventData) (string, error) {
 
 // MapStateToTemplate returns the appropriate template name for a given state transition.
 func MapStateToTemplate(prev, next task.State) string {
+	if string(next) == "EXECUTION_RESULT" {
+		return "execution_result"
+	}
 	if prev == "" && next == task.StateSubmitted {
 		return "task_submitted"
 	}

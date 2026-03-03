@@ -177,8 +177,17 @@ func pollTransitions(ctx context.Context, store *storage.Store, client discord.S
 		}
 
 		templateName := discord.MapStateToTemplate(task.State(r.FromState), task.State(r.ToState))
-		if task.State(r.FromState) == task.StateSubmitted {
+		if task.State(r.FromState) == task.StateSubmitted && task.State(r.ToState) == task.StatePlanning {
 			templateName = "task_submitted"
+		}
+
+		displayReason := r.Reason
+		displayContent := ""
+
+		// For execution results (where ToState is empty), we use the recorded logs/exit code
+		if r.ToState == "" {
+			displayContent = r.Logs.String
+			displayReason = fmt.Sprintf("Exit Code: %d", r.ExitCode.Int64)
 		}
 
 		content, err := discord.Format(templateName, discord.EventData{
@@ -186,7 +195,8 @@ func pollTransitions(ctx context.Context, store *storage.Store, client discord.S
 			Description: tk.Description,
 			FromState:   r.FromState,
 			ToState:     r.ToState,
-			Reason:      r.Reason,
+			Reason:      displayReason,
+			Content:     displayContent,
 		})
 		if err == nil {
 			if len(content) > 2000 {
