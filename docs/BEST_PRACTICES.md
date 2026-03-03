@@ -4,11 +4,15 @@
 
 ## Regular Hygiene
 - Always run relevant tests after making changes to confirm proper function.
-- Remember to commit changes when reaching a good stopping point.
-- Use Conventional Commits formatting.
+## Regular Hygiene & Checkpoint Commits
+- **Checkpoint Commits:** You **MUST** commit your changes at every significant milestone. A milestone is defined as:
+    - **Passing Tests:** Immediately after a new feature or fix passes its unit/integration tests.
+    - **Sub-task Completion:** After finishing a discrete part of a larger plan (e.g., updating a provider, then committing before moving to the orchestrator).
+    - **Configuration Updates:** After modifying core routing or policy files (`configs/*.yaml`).
+- **Atomic Changes:** Keep commits focused. Do not mix unrelated changes (e.g., don't commit a feature update and a documentation fix together unless they are strictly coupled).
+- **Style:** Use Conventional Commits formatting.
 - **Self-Evolution:** Add new items to this file as lessons are learned during development.
 
-## Perry-specific Items
 - When beginning a new session, consult `docs/tech-debt.md`.
     - If it has been more than 5 days since last review, ask the user if they would like to do a tech debt review. If so, list open issues and discuss whether to address any of them. Update the review date either way.
 - Remember to update `docs/VISION.md` after significant architectural decisions have been made.
