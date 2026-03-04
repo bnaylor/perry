@@ -71,13 +71,17 @@ The Executor writes to `/out`, which is bind-mounted from a host temp directory.
 
 **Phase 3c (complete): Shadow Auditor.** Adversarial "Red Team" audit gate — generates PoC exploits against Coder output. Confirmed exploits route back to coding for remediation. Multi-file executor support. Wired into CLI and orchestrator pipeline.
 
-**Phase 4: Discord and observability.** Discord bot sidecar, Prometheus-style metrics, compute health monitoring, dashboard.
+**Phase 4: Design Layer and Observability.**
+- **Design Layer (Architect Roundtable):** Software-supported multi-agent design sessions. `perry-relay` as a reactive lifecycle manager, Option B invocation model, global SQLite state (`perry.db`), and ADR-style artifact bridge (`docs/decisions/`).
+- **Observability:** Discord bot sidecar, Prometheus-style metrics, compute health monitoring, dashboard.
 
 **Phase 5: Advanced platform.** Sovereign Cache (agent persistence), long-term state manager, packet signing, non-coding task workflows.
 
-**Operational (ahead of schedule):**
+## Operational (Current Status)
+
 - **Sovereign Local Cluster:** Dual-node cluster is functional — Node 1 (diffuser, RTX 4070 Ti) handles coding/semantic audit, Node 2 (mink, RTX 4060) handles adversarial audit. Both nodes verified, Ollama configured for cross-node access. See `docs/local_llm_reference.md`.
-- **The Architect Roundtable (ad-hoc):** Multi-model design sessions (Claude, Gemini, human) running via Discord's `#perry-coordination` channel. The protocol works manually — agents post design questions, cross-review each other's proposals, and reach consensus asynchronously. Formal software support (token-based protocol, automated mirroring) planned for Phase 4.
+- **The Architect Roundtable (v1.0):** Transitioning from ad-hoc Discord discussions to the formal **Design Layer**. We have defined the 'Superb Six' architectural decisions (ADR-001 through ADR-006) to move the Roundtable into a reactive, software-supported infrastructure.
+
 
 **Future / Post-v1 Ideas:**
 - **Roundtable Automation:** Formalize the ad-hoc Discord roundtable into a software layer — structured turn-taking, automated consensus tracking, design doc generation from discussion threads.
